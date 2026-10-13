@@ -17,11 +17,6 @@ import { useAuth } from '@/hooks/use-auth'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const DEMO_ACCOUNTS = [
-  { email: 'doctor@nuhoud.health', password: 'demo1234', role: 'DOCTOR' as const, icon: Shield, accent: 'text-amber-500', labelKey: 'demoDoctor' },
-  { email: 'layla@nuhoud.health', password: 'demo1234', role: 'PATIENT' as const, icon: UserRound, accent: 'text-primary', labelKey: 'demoPatient1' },
-  { email: 'omar@nuhoud.health', password: 'demo1234', role: 'PATIENT' as const, icon: UserRound, accent: 'text-emerald-500', labelKey: 'demoPatient2' },
-]
 
 export function AuthScreen() {
   const { login, register } = useAuth()
@@ -67,15 +62,6 @@ export function AuthScreen() {
     } catch (err) {
       toast.error(t('invalidCredentials'))
     } finally { setRegBusy(false) }
-  }
-
-  const quickLogin = async (email: string, password: string) => {
-    setLoginEmail(email); setLoginPassword(password); setTab('login'); setLoginBusy(true)
-    try {
-      const user = await login(email, password)
-      toast.success(t('welcomeToast', { name: user.name.split(' ')[0] }))
-    } catch { toast.error(t('invalidCredentials')) }
-    finally { setLoginBusy(false) }
   }
 
   return (
@@ -147,7 +133,6 @@ export function AuthScreen() {
                       {t('signinBtn')}
                     </Button>
                   </form>
-                  <DemoQuickLogin onPick={quickLogin} busy={loginBusy} t={t} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -202,29 +187,6 @@ export function AuthScreen() {
   )
 }
 
-function DemoQuickLogin({ onPick, busy, t }: { onPick: (email: string, password: string) => void; busy: boolean; t: any }) {
-  return (
-    <div className="mt-5 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <div className="h-px flex-1 bg-border/60" />
-        <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">{t('demoAccounts')}</span>
-        <div className="h-px flex-1 bg-border/60" />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {DEMO_ACCOUNTS.map((acc) => {
-          const Icon = acc.icon
-          return (
-            <button key={acc.email} type="button" disabled={busy} onClick={() => onPick(acc.email, acc.password)} className="group flex h-9 items-center gap-2 rounded-md border border-border/60 bg-card/60 px-3 text-xs transition-colors hover:border-primary/50 hover:bg-primary/5 disabled:opacity-50">
-              <Icon className={cn('h-3.5 w-3.5', acc.accent)} />
-              <span className="font-medium text-foreground">{t(acc.labelKey)}</span>
-              <span className="ms-auto text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">{t('clickHint')}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
 function NeuronMark({ className }: { className?: string }) {
   return (
