@@ -1,0 +1,9 @@
+{
+  "buildCommand": "bun run build",
+  "devCommand": "bun run dev",
+  "framework": "nextjs",
+  "regions": ["sin1"],
+  "env": {
+    "NEXTAUTH_URL": "https://nuhoud.vercel.app"
+  }
+}

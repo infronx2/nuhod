@@ -1,0 +1,175 @@
+// Nuhoud Prisma schema
+// PostgreSQL provider for Supabase production.
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A platform user - patient, clinician, or admin.
+model User {
+  id               String   @id @default(cuid())
+  role             String   @default("PATIENT")
+  email            String   @unique
+  name             String
+  passwordHash     String?
+  avatarSeed       String   @default("14b8a6")
+  preferredDialect String   @default("omani")
+  dateOfBirth      String?
+  affectedSide     String   @default("right")
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  plans            TreatmentPlan[] @relation("PatientPlans")
+  prescribedPlans  TreatmentPlan[] @relation("DoctorPlans")
+  sessions         RehabSession[]
+  earnedBadges     EarnedBadge[]
+
+  @@index([role])
+  @@index([email])
+}
+
+/// A clinician-prescribed rehabilitation plan for a patient.
+model TreatmentPlan {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         User     @relation("PatientPlans", fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId        String
+  doctor          User     @relation("DoctorPlans", fields: [doctorId], references: [id])
+  title           String   @default("Upper-limb rehab plan")
+  targetLimb      String   @default("upper_right")
+  targetAngle     Int      @default(90)
+  sessionsPerWeek Int      @default(5)
+  dailyRepGoal    Int      @default(20)
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  active          Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sessions        RehabSession[]
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([active])
+}
+
+/// A completed rehabilitation session - one row per finished game/exercise.
+model RehabSession {
+  id                 String   @id @default(cuid())
+  patientId          String
+  patient            User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  planId             String?
+  plan               TreatmentPlan? @relation(fields: [planId], references: [id])
+  source             String   @default("demo")
+  limb               String   @default("right")
+  sessionDate       DateTime @default(now())
+  durationSeconds    Int      @default(0)
+  totalReps          Int      @default(0)
+  correctReps        Int      @default(0)
+  maxAchievedAngle   Float    @default(0)
+  compensationErrors Int      @default(0)
+  gamificationScore  Int      @default(0)
+  angleTimeline      String?
+  createdAt          DateTime @default(now())
+
+  @@index([patientId])
+  @@index([sessionDate])
+  @@index([planId])
+}
+
+/// Library of clinical exercise presets the doctor can prescribe.
+model ExercisePreset {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  nameAr      String?
+  description String
+  joint       String   @default("elbow")
+  limb        String   @default("right")
+  targetAngle Int      @default(90)
+  difficulty  String   @default("beginner")
+  sessionsPerWeek Int   @default(5)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+/// Gamification badges earned by a patient (one row per badge per patient).
+model EarnedBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug      String
+  earnedAt  DateTime @default(now())
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+/// Persisted AI coach chat messages.
+model ChatMessage {
+  id          String   @id @default(cuid())
+  speakerId   String
+  patientId   String
+  role        String
+  content     String
+  createdAt   DateTime @default(now())
+
+  @@index([speakerId, patientId, createdAt])
+  @@index([patientId])
+}
+
+/// Notification feed entries.
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   @default("info")
+  title     String
+  body      String?
+  severity  String   @default("info")
+  linkType  String?
+  linkId    String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+  @@index([userId])
+}
+
+/// Doctor-set rehabilitation goals for a patient.
+model RehabGoal {
+  id          String   @id @default(cuid())
+  patientId   String
+  type        String   @default("rom_target")
+  title       String
+  targetValue Float
+  currentValue Float  @default(0)
+  achieved    Boolean  @default(false)
+  achievedAt  DateTime?
+  startDate   DateTime @default(now())
+  targetDate  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([patientId, achieved])
+  @@index([patientId])
+}
+
+/// Rehabilitation streak tracker.
+model Streak {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  currentStreak Int      @default(0)
+  longestStreak Int      @default(0)
+  freezesLeft   Int      @default(2)
+  lastSessionDate String?
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
