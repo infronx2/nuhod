@@ -42,6 +42,12 @@ public:
 
 	bool AllowsGrip(ENuhoudGrip Grip) const { return Grip == ENuhoudGrip::Pinch ? bAllowPinch : bAllowGrasp; }
 	bool CanBeGrabbed() const;
+
+	/**
+	 * The current task decides what can be picked up: a stroke patient's resting hand is often
+	 * half closed and would otherwise pick up whatever cup it rests next to.
+	 */
+	void SetGrabEnabled(bool bEnabled) { bGrabEnabled = bEnabled; }
 	ENuhoudGrabState GetState() const { return State; }
 	FVector GetGrabAnchor() const { return GetActorTransform().TransformPosition(GrabAnchorLocal); }
 	const FVector& GetGrabAnchorLocal() const { return GrabAnchorLocal; }
@@ -119,6 +125,7 @@ private:
 	TArray<FGlowMaterial> GlowMaterials;
 
 	ENuhoudGrabState State;
+	bool bGrabEnabled = true;
 	ENuhoudGrip HeldGrip;
 	FTransform Home;
 	FQuat HeldRelativeRotation;

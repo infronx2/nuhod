@@ -14,15 +14,24 @@ namespace
 	constexpr int32 FullPoints = 100;
 	constexpr int32 AssistedPoints = 50;
 	constexpr float TaskTimeoutSeconds[] = { 45.f, 60.f, 60.f };
-	constexpr float TouchLightingAfterSeconds = 15.f;
-	constexpr float HoldOnTargetSeconds = 0.9f;
-	// Radii are on-screen distances (see ANuhoudFirstPersonPawn::PerceivedDistance).
-	constexpr float HookCatchRadius = 12.f;
-	constexpr float HookReleaseRadius = 16.f;
+	constexpr float TouchLightingAfterSeconds = 10.f;
+	constexpr float HoldOnTargetSeconds = 0.6f;
+	// Radii are on-screen distances (see ANuhoudFirstPersonPawn::PerceivedDistance). Sized from the
+	// 2026-10-14 real-camera session, where dates were carried for 6-13 s without ever meeting the
+	// old 10 cm plate radius and 12 cm height band.
+	constexpr float HookCatchRadius = 16.f;
+	constexpr float HookReleaseRadius = 20.f;
 	constexpr float HookMinAboveTable = 30.f;
-	constexpr float PlateRadius = 10.f;
-	constexpr float PlateReleaseRadius = 12.f;
-	constexpr float MouthRadius = 14.f;
+	constexpr float PlateRadius = 14.f;
+	constexpr float PlateReleaseRadius = 18.f;
+	constexpr float PlateHeldMaxHeight = 20.f;
+	constexpr float PlateBelowTolerance = 6.f;
+	constexpr float MouthRadius = 16.f;
+	// Targets start growing after AssistAfterSeconds and reach MaxAssistScale AssistRampSeconds later.
+	constexpr float AssistAfterSeconds = 15.f;
+	constexpr float AssistRampSeconds = 20.f;
+	constexpr float MaxAssistScale = 1.8f;
+	constexpr float ProgressLogSeconds = 2.f;
 	// Mouth relative to the eyes: slightly forward and below.
 	const FVector MouthLocal(6.f, 0.f, -9.f);
 }
@@ -43,6 +52,7 @@ ANuhoudTaskDirector::ANuhoudTaskDirector()
 	bSessionOver = false;
 	TaskTime = 0.f;
 	OnTargetTime = 0.f;
+	ProgressLogTimer = 0.f;
 	Difficulty = 0.3f;
 	NextSlot = 0;
 	FeedbackTime = 0.f;
@@ -112,6 +122,38 @@ void ANuhoudTaskDirector::EndSession()
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: tasks stopped, the session ended after %d task(s)"), TaskCount);
 }
 
+void ANuhoudTaskDirector::AllowOnlyTaskObjects()
+{
+	const bool bDateTask = Task != ETask::HangLantern;
+	auto Allow = [](ANuhoudGrabbable* Object, bool bAllowed)
+	{
+		if (!IsValid(Object)) return;
+		Object->SetGrabEnabled(bAllowed);
+		if (!bAllowed && Object->GetState() == ENuhoudGrabState::Held)
+		{
+			// Frees the hand for the new task (the 2026-10-14 session held a cup through a whole lantern task).
+			Object->ReturnHome();
+		}
+	};
+	for (ANuhoudDate* Date : Dates) Allow(Date, bDateTask);
+	for (ANuhoudGrabbable* Prop : Props) Allow(Prop, false);
+	Allow(TaskLantern, true);
+}
+
+float ANuhoudTaskDirector::AssistScale() const
+{
+	const float Ramp = FMath::Clamp((TaskTime - AssistAfterSeconds) / AssistRampSeconds, 0.f, 1.f);
+	return 1.f + Ramp * (MaxAssistScale - 1.f);
+}
+
+bool ANuhoudTaskDirector::ProgressLogDue(float DeltaTime)
+{
+	ProgressLogTimer += DeltaTime;
+	if (ProgressLogTimer < ProgressLogSeconds) return false;
+	ProgressLogTimer = 0.f;
+	return true;
+}
+
 void ANuhoudTaskDirector::AfterDelay(float Seconds, TFunction<void()> Action)
 {
 	FTimerHandle Handle;
@@ -130,6 +172,7 @@ void ANuhoudTaskDirector::StartNextTask()
 	TaskCount++;
 	TaskTime = 0.f;
 	OnTargetTime = 0.f;
+	ProgressLogTimer = 0.f;
 	bTaskActive = true;
 
 	FActorSpawnParameters Params;
@@ -162,6 +205,7 @@ void ANuhoudTaskDirector::StartNextTask()
 			Majlis->GetPlateSpot(bRight), Facing, Params);
 		if (TaskMarker) TaskMarker->BuildPlate();
 	}
+	AllowOnlyTaskObjects();
 }
 
 void ANuhoudTaskDirector::ClearTaskObjects()
@@ -222,12 +266,19 @@ void ANuhoudTaskDirector::Tick(float DeltaTime)
 	FeedbackTime = FMath::Max(0.f, FeedbackTime - DeltaTime);
 	if (!bTaskActive || !InputAdapter) return;
 
+	// The clock only runs while the camera sees a hand: in the 2026-10-14 session the first task
+	// timed out while the patient was still settling in front of the camera.
+	if (!InputAdapter->IsHandVisible(ENuhoudHandSide::Right) && !InputAdapter->IsHandVisible(ENuhoudHandSide::Left))
+	{
+		return;
+	}
+
 	TaskTime += DeltaTime;
 	switch (Task)
 	{
 	case ETask::HangLantern: EvaluateLantern(DeltaTime); break;
 	case ETask::ServeDate: EvaluateServe(DeltaTime); break;
-	case ETask::EatDate: EvaluateEat(); break;
+	case ETask::EatDate: EvaluateEat(DeltaTime); break;
 	}
 
 	if (bTaskActive && TaskTime > TaskTimeoutSeconds[static_cast<int32>(Task)])
@@ -242,35 +293,55 @@ void ANuhoudTaskDirector::EvaluateLantern(float DeltaTime)
 {
 	if (!IsValid(TaskLantern) || !IsValid(TaskMarker)) return;
 
+	// Palm to the lantern's surface: the old centre point needed the palm inside the lantern.
 	TArray<FVector> Palms;
 	InputAdapter->GetInteractionPoints(Palms);
 	float NearestPalm = TNumericLimits<float>::Max();
 	for (const FVector& Palm : Palms)
 	{
-		NearestPalm = FMath::Min(NearestPalm, Perceived(Palm, TaskLantern->GetActorLocation()));
+		NearestPalm = FMath::Min(NearestPalm, Perceived(Palm, TaskLantern->ClosestSurfacePoint(Palm)));
 	}
 	TaskLantern->SetTouchLighting(TaskTime > TouchLightingAfterSeconds, NearestPalm);
 
 	// Holding it steady at the hook also counts, for patients who cannot open the hand yet.
-	const bool bHeldAtHook = TaskLantern->GetState() == ENuhoudGrabState::Held
-		&& Perceived(TaskLantern->GetGrabAnchor(), TaskMarker->GetActorLocation()) < HookCatchRadius;
+	const bool bHeld = TaskLantern->GetState() == ENuhoudGrabState::Held;
+	const float HookDistance = Perceived(TaskLantern->GetGrabAnchor(), TaskMarker->GetActorLocation());
+	const bool bHeldAtHook = bHeld && HookDistance < HookCatchRadius * AssistScale();
 	OnTargetTime = bHeldAtHook ? OnTargetTime + DeltaTime : 0.f;
+	TaskMarker->SetProgress(OnTargetTime / HoldOnTargetSeconds);
+
+	if (ProgressLogDue(DeltaTime))
+	{
+		if (bHeld)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d lantern held, %.0fcm from the hook (counts under %.0f)"),
+				TaskCount, HookDistance, HookCatchRadius * AssistScale());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d lantern not held, nearest palm %.0fcm from it (touch lights it under %.0f after %.0fs)"),
+				TaskCount, NearestPalm, TaskLantern->TouchRadius, TouchLightingAfterSeconds);
+		}
+	}
+
 	if (OnTargetTime > HoldOnTargetSeconds)
 	{
-		HangLanternOnHook();
+		HangLanternOnHook(HookDistance >= HookCatchRadius);
 	}
 }
 
 void ANuhoudTaskDirector::OnLanternReleased(ANuhoudGrabbable* Grabbable, ENuhoudGrip Grip)
 {
-	if (bTaskActive && Task == ETask::HangLantern && Grabbable == TaskLantern && IsValid(TaskMarker)
-		&& Perceived(Grabbable->GetGrabAnchor(), TaskMarker->GetActorLocation()) < HookReleaseRadius)
+	if (!bTaskActive || Task != ETask::HangLantern || Grabbable != TaskLantern || !IsValid(TaskMarker)) return;
+
+	const float HookDistance = Perceived(Grabbable->GetGrabAnchor(), TaskMarker->GetActorLocation());
+	if (HookDistance < HookReleaseRadius * AssistScale())
 	{
-		HangLanternOnHook();
+		HangLanternOnHook(HookDistance >= HookReleaseRadius);
 	}
 }
 
-void ANuhoudTaskDirector::HangLanternOnHook()
+void ANuhoudTaskDirector::HangLanternOnHook(bool bAssisted)
 {
 	ANuhoudLantern* Lantern = TaskLantern;
 	ANuhoudTargetMarker* Marker = TaskMarker;
@@ -281,7 +352,7 @@ void ANuhoudTaskDirector::HangLanternOnHook()
 	Lantern->PlaceAt(FTransform(Upright, Marker->GetActorLocation() - Upright.RotateVector(Lantern->GetGrabAnchorLocal())));
 	Lantern->LightUp();
 	Marker->Celebrate();
-	CompleteTask(FullPoints, TEXT("Beautiful! The majlis glows brighter"));
+	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("Beautiful! The majlis glows brighter"));
 
 	TWeakObjectPtr<ANuhoudLantern> WeakLantern(Lantern);
 	TWeakObjectPtr<ANuhoudTargetMarker> WeakMarker(Marker);
@@ -358,13 +429,14 @@ float ANuhoudTaskDirector::Perceived(const FVector& A, const FVector& B) const
 	return PatientPawn ? PatientPawn->PerceivedDistance(A, B) : FVector::Dist(A, B);
 }
 
-bool ANuhoudTaskDirector::IsOverPlate(const AActor* Date, float Radius, float MaxHeight) const
+float ANuhoudTaskDirector::PlateDistance(const AActor* Date, float MaxHeight) const
 {
-	if (!IsValid(TaskMarker)) return false;
+	if (!IsValid(TaskMarker)) return TNumericLimits<float>::Max();
 	const FVector Top = TaskMarker->GetPlateTop();
 	const FVector P = Date->GetActorLocation();
 	const float Height = P.Z - Top.Z;
-	return Height > -3.f && Height < MaxHeight && Perceived(FVector(P.X, P.Y, Top.Z), Top) < Radius;
+	if (Height < -PlateBelowTolerance || Height > MaxHeight) return TNumericLimits<float>::Max();
+	return Perceived(FVector(P.X, P.Y, Top.Z), Top);
 }
 
 bool ANuhoudTaskDirector::IsAnyDateHeld() const
@@ -380,46 +452,76 @@ void ANuhoudTaskDirector::EvaluateServe(float DeltaTime)
 {
 	if (!IsValid(TaskMarker)) return;
 
+	const float Radius = PlateRadius * AssistScale();
 	bool bHeldOverPlate = false;
+	const ANuhoudDate* HeldDate = nullptr;
 	for (ANuhoudDate* Date : Dates)
 	{
 		if (!IsValid(Date)) continue;
 		const ENuhoudGrabState S = Date->GetState();
-		if (S == ENuhoudGrabState::Held && IsOverPlate(Date, PlateRadius, 12.f))
+		if (S == ENuhoudGrabState::Held)
 		{
-			bHeldOverPlate = true;
-			if (OnTargetTime + DeltaTime > HoldOnTargetSeconds)
+			HeldDate = Date;
+			const float Distance = PlateDistance(Date, PlateHeldMaxHeight);
+			if (Distance < Radius)
 			{
-				ServeDate(Date);
+				bHeldOverPlate = true;
+				if (OnTargetTime + DeltaTime > HoldOnTargetSeconds)
+				{
+					ServeDate(Date, Distance >= PlateRadius);
+					return;
+				}
+			}
+		}
+		else if (S == ENuhoudGrabState::Free && Date->GetVelocity().Size() < 15.f)
+		{
+			// Dropped and came to rest on the plate.
+			const float Distance = PlateDistance(Date, 4.f);
+			if (Distance < Radius)
+			{
+				ServeDate(Date, Distance >= PlateRadius);
 				return;
 			}
 		}
-		else if (S == ENuhoudGrabState::Free && IsOverPlate(Date, PlateRadius, 4.f) && Date->GetVelocity().Size() < 15.f)
-		{
-			// Dropped and came to rest on the plate.
-			ServeDate(Date);
-			return;
-		}
 	}
 	OnTargetTime = bHeldOverPlate ? OnTargetTime + DeltaTime : 0.f;
+	TaskMarker->SetProgress(OnTargetTime / HoldOnTargetSeconds);
+
+	if (ProgressLogDue(DeltaTime))
+	{
+		if (HeldDate)
+		{
+			const FVector Top = TaskMarker->GetPlateTop();
+			const FVector P = HeldDate->GetActorLocation();
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d date held %.0fcm from the plate, %.0fcm above it (counts under %.0f, %.0f..%.0f above)"),
+				TaskCount, Perceived(FVector(P.X, P.Y, Top.Z), Top), P.Z - Top.Z, Radius, -PlateBelowTolerance, PlateHeldMaxHeight);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d no date held yet"), TaskCount);
+		}
+	}
 }
 
 void ANuhoudTaskDirector::OnDateReleased(ANuhoudGrabbable* Grabbable, ENuhoudGrip Grip)
 {
-	if (bTaskActive && Task == ETask::ServeDate && IsOverPlate(Grabbable, PlateReleaseRadius, 20.f))
+	if (!bTaskActive || Task != ETask::ServeDate) return;
+
+	const float Distance = PlateDistance(Grabbable, 20.f);
+	if (Distance < PlateReleaseRadius * AssistScale())
 	{
-		ServeDate(Grabbable);
+		ServeDate(Grabbable, Distance >= PlateReleaseRadius);
 	}
 }
 
-void ANuhoudTaskDirector::ServeDate(ANuhoudGrabbable* Date)
+void ANuhoudTaskDirector::ServeDate(ANuhoudGrabbable* Date, bool bAssisted)
 {
 	ANuhoudTargetMarker* Marker = TaskMarker;
 	TaskMarker = nullptr;
 
 	Date->PlaceAt(FTransform(Date->GetActorRotation(), Marker->GetPlateTop() + FVector(0.f, 0.f, Date->GetRestHeight())));
 	Marker->Celebrate();
-	CompleteTask(FullPoints, TEXT("Thank you! Your guest is served"));
+	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("Thank you! Your guest is served"));
 
 	TWeakObjectPtr<ANuhoudGrabbable> WeakDate(Date);
 	TWeakObjectPtr<ANuhoudTargetMarker> WeakMarker(Marker);
@@ -437,17 +539,33 @@ FVector ANuhoudTaskDirector::GetMouthLocation() const
 		: Majlis->GetPatientEyes() + MouthLocal;
 }
 
-void ANuhoudTaskDirector::EvaluateEat()
+void ANuhoudTaskDirector::EvaluateEat(float DeltaTime)
 {
 	const FVector Mouth = GetMouthLocation();
+	float Nearest = TNumericLimits<float>::Max();
 	for (ANuhoudDate* Date : Dates)
 	{
-		if (IsValid(Date) && Date->GetState() == ENuhoudGrabState::Held
-			&& Perceived(Date->GetActorLocation(), Mouth) < MouthRadius)
+		if (!IsValid(Date) || Date->GetState() != ENuhoudGrabState::Held) continue;
+		const float Distance = Perceived(Date->GetActorLocation(), Mouth);
+		Nearest = FMath::Min(Nearest, Distance);
+		if (Distance < MouthRadius * AssistScale())
 		{
 			Date->Eat();
-			CompleteTask(FullPoints, TEXT("Bil hana wal shifa! Enjoy your date"));
+			CompleteTask(Distance >= MouthRadius ? AssistedPoints : FullPoints, TEXT("Bil hana wal shifa! Enjoy your date"));
 			return;
+		}
+	}
+
+	if (ProgressLogDue(DeltaTime))
+	{
+		if (Nearest < TNumericLimits<float>::Max())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d date held %.0fcm from the mouth (counts under %.0f)"),
+				TaskCount, Nearest, MouthRadius * AssistScale());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d no date held yet"), TaskCount);
 		}
 	}
 }

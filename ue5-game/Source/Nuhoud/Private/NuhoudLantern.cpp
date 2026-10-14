@@ -36,7 +36,8 @@ ANuhoudLantern::ANuhoudLantern()
 	bKeepUpright = true;
 	GrabAnchorLocal = FVector(0.f, 0.f, 10.3f + VisualOffsetZ);
 
-	TouchRadius = 12.f;
+	// Measured to the lantern's surface; a real camera placed palms resting on it 12-14 cm away.
+	TouchRadius = 16.f;
 	SecondsToLightByTouch = 2.5f;
 	NearestPalm = TNumericLimits<float>::Max();
 

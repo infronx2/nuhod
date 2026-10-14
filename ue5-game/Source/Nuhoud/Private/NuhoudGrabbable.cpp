@@ -69,7 +69,8 @@ void ANuhoudGrabbable::BeginPlay()
 
 bool ANuhoudGrabbable::CanBeGrabbed() const
 {
-	return State == ENuhoudGrabState::Home || State == ENuhoudGrabState::Free || State == ENuhoudGrabState::Returning;
+	return bGrabEnabled
+		&& (State == ENuhoudGrabState::Home || State == ENuhoudGrabState::Free || State == ENuhoudGrabState::Returning);
 }
 
 void ANuhoudGrabbable::SetPhysics(bool bSimulate)

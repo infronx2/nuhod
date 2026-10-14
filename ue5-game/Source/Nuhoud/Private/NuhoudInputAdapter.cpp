@@ -20,10 +20,15 @@ namespace
 	constexpr float PinchFloorRisePerSecond = 0.05f;
 
 	// Reach is measured as the patient sees it on screen (see ANuhoudFirstPersonPawn::PerceivedDistance).
-	constexpr float PinchReachCm = 6.f;
-	constexpr float GraspReachCm = 8.f;
+	// Only the current task's objects can be grabbed, so the reach can be generous: in the 2026-10-14
+	// session a real camera put the hand 12-14 cm from the lantern while the patient was touching it.
+	constexpr float PinchReachCm = 9.f;
+	constexpr float GraspReachCm = 13.f;
 	constexpr double GrabWindowSeconds = 0.8;
 	constexpr float DwellGrabSeconds = 0.3f;
+	// A held object is let go only after the grip has read open for this long; camera noise around the
+	// threshold otherwise drops it within a frame or two of picking it up.
+	constexpr float ReleaseDebounceSeconds = 0.3f;
 	constexpr float MaxWristBendDeg = 70.f;
 	constexpr float GripLogSeconds = 2.f;
 
@@ -217,6 +222,7 @@ void ANuhoudInputAdapter::Grab(FSideState& S, const ANuhoudRiggedHand* H, ANuhou
 	Target->BeginGrab(Grip, GripFrame(H, Grip), GrabPoint);
 	S.Held = Target;
 	S.HeldGrip = Grip;
+	S.OpenTime = 0.f;
 	S.DwellTarget.Reset();
 	S.DwellTime = 0.f;
 	if (UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
@@ -272,12 +278,14 @@ void ANuhoudInputAdapter::UpdateGrip(ENuhoudHandSide Side, float DeltaTime)
 
 	if (ANuhoudGrabbable* Held = S.Held.Get())
 	{
+		const bool bStillGripping = S.HeldGrip == ENuhoudGrip::Pinch ? bGripping : S.bGrasping;
+		S.OpenTime = bStillGripping ? 0.f : S.OpenTime + DeltaTime;
 		if (Held->GetState() != ENuhoudGrabState::Held)
 		{
-			// The session placed or consumed it (hung on the hook, eaten, served).
+			// The session placed or consumed it (hung on the hook, eaten, served, or put back).
 			S.Held.Reset();
 		}
-		else if (S.HeldGrip == ENuhoudGrip::Pinch ? bGripping : S.bGrasping)
+		else if (S.OpenTime < ReleaseDebounceSeconds)
 		{
 			Held->UpdateHeld(GripFrame(H, S.HeldGrip), DeltaTime);
 			return;
@@ -338,6 +346,8 @@ void ANuhoudInputAdapter::LogGrip(ENuhoudHandSide Side, const FSideState& S, con
 	float NearDist = TNumericLimits<float>::Max();
 	for (TActorIterator<ANuhoudGrabbable> It(GetWorld()); It; ++It)
 	{
+		// What this task lets the hand pick up, plus whatever it already holds.
+		if (!It->CanBeGrabbed() && S.Held.Get() != *It) continue;
 		const float Dist = Perceived(Point, It->ClosestSurfacePoint(Point));
 		if (Dist < NearDist)
 		{

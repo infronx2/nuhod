@@ -83,6 +83,7 @@ void ANuhoudTargetMarker::Tick(float DeltaTime)
 	Time += DeltaTime;
 
 	FLinearColor Emissive = Teal * (1.5f + 1.2f * (0.5f + 0.5f * FMath::Sin(Time * 3.f)));
+	Emissive = FMath::Lerp(Emissive, Gold * 5.f, Progress);
 	if (bCelebrating)
 	{
 		CelebrateTime += DeltaTime;

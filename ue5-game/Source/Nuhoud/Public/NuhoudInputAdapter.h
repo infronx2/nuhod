@@ -92,6 +92,8 @@ private:
 		double PinchStartTime = -100.0;
 		TWeakObjectPtr<ANuhoudGrabbable> Held;
 		ENuhoudGrip HeldGrip = ENuhoudGrip::Grasp;
+		/** How long the grip has read open while holding something. */
+		float OpenTime = 0.f;
 		FVector PrevPalm = FVector::ZeroVector;
 		FVector PalmVelocity = FVector::ZeroVector;
 		bool bHasPrevPalm = false;
