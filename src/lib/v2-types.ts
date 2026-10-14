@@ -120,6 +120,30 @@ export interface V2Stats {
   activity7d: { day: string; reps: number }[]
 }
 
+export type V2PatientStatus = 'improving' | 'stable' | 'attention' | 'new'
+
+/** Progress at a glance from the patient's last few sessions (see GET /api/v2/patients). */
+export interface V2PatientIndicators {
+  status: V2PatientStatus
+  /** Degrees the newer sessions gained over the older ones; null with fewer than two sessions. */
+  romTrend: number | null
+  /** Compensation errors per rep (web tracker), 0..1. */
+  compensationRate: number
+  /** Majlis tasks finished only with assistance, per task, 0..1. */
+  assistedRate: number
+  painStops: number
+  bestGrip: number | null
+  recentSessions: number
+}
+
+export interface V2PatientPlanSummary {
+  targetAngle: number
+  dailyRepGoal: number
+  sessionsPerWeek: number
+  targetLimb: string
+  notes?: string | null
+}
+
 export interface V2PatientSummary {
   id: string
   name: string
@@ -139,6 +163,8 @@ export interface V2PatientSummary {
     maxAchievedAngle: number
     compensationErrors: number
   } | null
+  activePlan?: V2PatientPlanSummary | null
+  indicators?: V2PatientIndicators
 }
 
 export interface V2PatientsResponse {

@@ -49,6 +49,14 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	void SetViewPawn(ANuhoudFirstPersonPawn* InPawn) { ViewPawn = InPawn; }
+
+	/** The hands the treatment plan trains; the other hand is not shown and cannot pick anything up. */
+	void SetActiveHands(bool bRight, bool bLeft)
+	{
+		bRightActive = bRight;
+		bLeftActive = bLeft;
+	}
+	bool IsHandActive(ENuhoudHandSide Side) const { return Side == ENuhoudHandSide::Right ? bRightActive : bLeftActive; }
 	void SetArmSample(ENuhoudHandSide Side, const FNuhoudArmSample& Sample);
 	void SetHandSample(ENuhoudHandSide Side, const FNuhoudHandSample& Sample);
 
@@ -135,4 +143,6 @@ private:
 
 	FSideState RightState;
 	FSideState LeftState;
+	bool bRightActive = true;
+	bool bLeftActive = true;
 };

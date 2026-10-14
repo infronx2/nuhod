@@ -14,6 +14,11 @@ import { hashPassword } from '@/lib/auth'
  *   omar@nuhoud.health     — PATIENT (left-side affected, fewer sessions)
  */
 export async function POST() {
+  // Creates logins with a published password, so it only exists for local development.
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 })
+  }
+
   const created: Record<string, number> = {
     users: 0, plans: 0, sessions: 0, presets: 0, badges: 0,
   }

@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
+import { ApiError } from '@/lib/api'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -32,6 +33,8 @@ export function AuthScreen() {
   const [regPassword, setRegPassword] = React.useState('')
   const [showRegPw, setShowRegPw] = React.useState(false)
   const [regRole, setRegRole] = React.useState<'PATIENT' | 'DOCTOR'>('PATIENT')
+  const [regSide, setRegSide] = React.useState<'right' | 'left' | 'bilateral'>('right')
+  const [regInvite, setRegInvite] = React.useState('')
   const [regBusy, setRegBusy] = React.useState(false)
 
   const handleLogin = async (e?: React.FormEvent) => {
@@ -57,10 +60,17 @@ export function AuthScreen() {
     if (regPassword.length < 6) { toast.error(t('passwordTooShort')); return }
     setRegBusy(true)
     try {
-      const user = await register({ email, name, password: regPassword, role: regRole })
+      const user = await register({
+        email,
+        name,
+        password: regPassword,
+        role: regRole,
+        ...(regRole === 'PATIENT' ? { affectedSide: regSide } : { inviteCode: regInvite.trim() }),
+      })
       toast.success(t('welcomeToast', { name: user.name.split(' ')[0] }))
     } catch (err) {
-      toast.error(t('invalidCredentials'))
+      const status = err instanceof ApiError ? err.status : 0
+      toast.error(status === 409 ? t('emailTaken') : status === 403 ? t('inviteRequired') : t('registerFailed'))
     } finally { setRegBusy(false) }
   }
 
@@ -172,6 +182,24 @@ export function AuthScreen() {
                         ))}
                       </div>
                     </div>
+                    {regRole === 'PATIENT' ? (
+                      <div className="flex flex-col gap-1.5">
+                        <Label>{t('affectedSideLabel')}</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([['right', t('sideRight')], ['left', t('sideLeft')], ['bilateral', t('sideBoth')]] as const).map(([side, label]) => (
+                            <button key={side} type="button" onClick={() => setRegSide(side)} className={cn('flex h-10 items-center justify-center rounded-md border text-sm font-medium transition-colors', regSide === side ? 'border-primary bg-primary/10 text-primary dark:text-primary' : 'border-border bg-card text-muted-foreground hover:bg-muted')}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="reg-invite">{t('inviteCode')}</Label>
+                        <Input id="reg-invite" value={regInvite} onChange={(e) => setRegInvite(e.target.value)} disabled={regBusy} required autoComplete="off" />
+                        <p className="text-xs text-muted-foreground">{t('inviteCodeHint')}</p>
+                      </div>
+                    )}
                     <Button type="submit" disabled={regBusy} className="mt-1 h-10 gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
                       {regBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                       {t('createAccountBtn')}

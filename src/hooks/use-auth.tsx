@@ -24,6 +24,8 @@ interface AuthState {
     name: string
     password: string
     role?: 'PATIENT' | 'DOCTOR'
+    affectedSide?: 'right' | 'left' | 'bilateral'
+    inviteCode?: string
   }) => Promise<V2User>
   logout: () => void
   refresh: () => Promise<void>
@@ -90,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: string
       password: string
       role?: 'PATIENT' | 'DOCTOR'
+      affectedSide?: 'right' | 'left' | 'bilateral'
+      inviteCode?: string
     }): Promise<V2User> => {
       const data = await apiFetch<{
         ok: boolean

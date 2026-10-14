@@ -15,6 +15,15 @@ enum class ENuhoudTrackingMode : uint8
 	Headset
 };
 
+/** The hand a treatment plan trains. */
+UENUM()
+enum class ENuhoudPlanLimb : uint8
+{
+	Right,
+	Left,
+	Both
+};
+
 UCLASS()
 class NUHOUD_API UNuhoudGameInstance : public UGameInstance
 {
@@ -39,6 +48,29 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Tracking")
 	ENuhoudTrackingMode TrackingMode;
+
+	/** Shoulder elevation (degrees) the doctor's plan asks for; the hooks are placed around it. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
+	float PlanTargetAngle;
+
+	/** Completed tasks that end a session; 0 means no limit. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
+	int32 PlanDailyTasks;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
+	ENuhoudPlanLimb PlanLimb;
+
+	/** False while the defaults are in use (no plan, or it could not be loaded). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
+	bool bPlanFromDoctor;
+
+	bool PlanTrainsHand(bool bRightHand) const
+	{
+		return PlanLimb == ENuhoudPlanLimb::Both || (PlanLimb == ENuhoudPlanLimb::Right) == bRightHand;
+	}
+
+	/** Loads the signed-in patient's active plan, then calls OnDone (also when it fails: the defaults stay). */
+	void FetchActivePlan(TFunction<void()> OnDone);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
 	int32 SessionScore;

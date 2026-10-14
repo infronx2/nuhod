@@ -143,6 +143,11 @@ void ANuhoudPlayerController::SetupInputComponent()
 
 void ANuhoudPlayerController::OnFinishPressed()
 {
+	FinishSession();
+}
+
+void ANuhoudPlayerController::FinishSession()
+{
 	if (bGameInitialized && !bSessionEnded)
 	{
 		EndSession();
@@ -317,7 +322,8 @@ void ANuhoudPlayerController::OnWebSocketMessage(const FString& Message)
 			Arm.ElbowAngle = ReadNumber(*ArmObj, TEXT("elbow_angle"));
 		}
 		if (InputAdapter) InputAdapter->SetArmSample(Side, Arm);
-		if (GI && Arm.bTracked)
+		// Only the arm the plan trains is measured for the doctor.
+		if (GI && Arm.bTracked && GI->PlanTrainsHand(Side == ENuhoudHandSide::Right))
 		{
 			GI->UpdateMaxAngle(Arm.ShoulderElevation);
 			GI->UpdateElbowAngle(Arm.ElbowAngle);
@@ -374,8 +380,11 @@ void ANuhoudPlayerController::UpdateHeadsetHands()
 		LastHeadsetHandTime[static_cast<int32>(Side)] = FPlatformTime::Seconds();
 		InputAdapter->SetArmSample(Side, Arm);
 		InputAdapter->SetHandSample(Side, Hand);
-		GI->UpdateMaxAngle(Arm.ShoulderElevation);
-		GI->UpdateElbowAngle(Arm.ElbowAngle);
+		if (GI->PlanTrainsHand(Side == ENuhoudHandSide::Right))
+		{
+			GI->UpdateMaxAngle(Arm.ShoulderElevation);
+			GI->UpdateElbowAngle(Arm.ElbowAngle);
+		}
 	}
 }
 
@@ -443,8 +452,11 @@ void ANuhoudPlayerController::UpdateStatusHUD()
 
 	if (ScoreText && GI)
 	{
-		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("SCORE %d   |   STREAK %d   |   TASKS %d   |   Esc: finish"),
-			GI->SessionScore, GI->SessionStreak, GI->SessionReps)));
+		const FString Tasks = GI->PlanDailyTasks > 0
+			? FString::Printf(TEXT("%d/%d"), GI->SessionReps, GI->PlanDailyTasks)
+			: FString::FromInt(GI->SessionReps);
+		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("SCORE %d   |   STREAK %d   |   TASKS %s   |   Esc: finish"),
+			GI->SessionScore, GI->SessionStreak, *Tasks)));
 	}
 
 	FString CameraProblem;

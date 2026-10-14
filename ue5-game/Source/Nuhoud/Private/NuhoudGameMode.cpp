@@ -144,6 +144,31 @@ void ANuhoudGameMode::StartGameAfterLogin()
 		NPC->InitializeAfterLogin();
 	}
 
-	Director->StartSession(InputAdapterActor);
+	// The doctor's plan decides the target angle, the session length and the hand that plays,
+	// so the tasks start once it has loaded (or failed to, which keeps the defaults).
+	if (GI)
+	{
+		TWeakObjectPtr<ANuhoudGameMode> WeakThis(this);
+		GI->FetchActivePlan([WeakThis]()
+		{
+			if (WeakThis.IsValid()) WeakThis->BeginTasks();
+		});
+	}
+	else
+	{
+		BeginTasks();
+	}
 	UE_LOG(LogTemp, Warning, TEXT("=== NUHOUD MAJLIS READY === Patient: %s"), GI ? *GI->CloudPatientId : TEXT("unknown"));
+}
+
+void ANuhoudGameMode::BeginTasks()
+{
+	if (const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		if (InputAdapterActor)
+		{
+			InputAdapterActor->SetActiveHands(GI->PlanTrainsHand(true), GI->PlanTrainsHand(false));
+		}
+	}
+	Director->StartSession(InputAdapterActor);
 }

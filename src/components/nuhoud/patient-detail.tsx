@@ -2,14 +2,14 @@
 
 import * as React from 'react'
 import { toast } from 'sonner'
+import { useTranslations } from 'next-intl'
 import {
   ArrowLeft,
   Mail,
   Cake,
   Hand,
   Stethoscope,
-  Plus,
-  Loader2,
+  Pencil,
   FileJson,
   RotateCw,
   CalendarDays,
@@ -19,26 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Slider } from '@/components/ui/slider'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -56,13 +37,13 @@ import { GoalsTracker } from '@/components/nuhoud/goals-tracker'
 import type {
   V2PatientDetail,
   V2Stats,
-  V2CreatePlanPayload,
-  V2TreatmentPlan,
 } from '@/lib/v2-types'
 import { GradientAvatar } from '@/components/nuhoud/gradient-avatar'
 import { ActivityChart } from '@/components/nuhoud/activity-chart'
 import { AccuracyDonut } from '@/components/nuhoud/accuracy-donut'
 import { RomTrendChart } from '@/components/nuhoud/rom-trend-chart'
+import { GripTrendChart } from '@/components/nuhoud/grip-trend-chart'
+import { PlanEditorDialog } from '@/components/nuhoud/plan-editor-dialog'
 import { ActivityHeatmap } from '@/components/nuhoud/activity-heatmap'
 import { CompTrendChart } from '@/components/nuhoud/comp-trend-chart'
 import { LimbBreakdown } from '@/components/nuhoud/limb-breakdown'
@@ -122,6 +103,7 @@ function ageFrom(dob: string | null | undefined): string {
  * Recent sessions table with per-row "View FHIR" button.
  */
 export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetailProps) {
+  const tr = useTranslations('roster')
   const [detail, setDetail] = React.useState<V2PatientDetail | null>(null)
   const [stats, setStats] = React.useState<V2Stats | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -333,8 +315,8 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
               className="h-9 gap-1.5 bg-primary text-white hover:bg-primary"
               onClick={() => setPlanDialogOpen(true)}
             >
-              <Plus className="h-3.5 w-3.5" />
-              Prescribe new plan
+              <Pencil className="h-3.5 w-3.5" />
+              {tr('editPlan')}
             </Button>
           </div>
         )}
@@ -403,7 +385,10 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
       </Card>
 
       {/* ---------- Clinical trends: compensation trend + per-limb breakdown ---------- */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="border-border/40 bg-card/60 p-4 shadow-sm backdrop-blur">
+          <GripTrendChart sessions={detail?.sessions ?? []} loading={loading} />
+        </Card>
         <Card className="border-border/40 bg-card/60 p-4 shadow-sm backdrop-blur">
           <CompTrendChart sessions={detail?.sessions ?? []} loading={loading} />
         </Card>
@@ -520,21 +505,16 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
         onOpenChange={setFhirOpen}
       />
 
-      {planDialogOpen && (
-        <PrescribePlanDialog
-          patientId={patientId}
-          open={planDialogOpen}
-          onOpenChange={setPlanDialogOpen}
-          onCreated={(plan) => {
-            toast.success('Plan prescribed', {
-              description: `${plan.title} — target ${plan.targetAngle}°`,
-            })
-            setPlanDialogOpen(false)
-            void fetchDetail()
-            onPlanCreated?.()
-          }}
-        />
-      )}
+      <PlanEditorDialog
+        patient={detail ? { id: patientId, name: detail.patient.name, affectedSide: detail.patient.affectedSide } : null}
+        plan={detail?.activePlan ?? null}
+        open={planDialogOpen}
+        onOpenChange={setPlanDialogOpen}
+        onSaved={() => {
+          void fetchDetail()
+          onPlanCreated?.()
+        }}
+      />
 
       <SetGoalDialog
         patientId={patientId}
@@ -583,169 +563,3 @@ function KpiTile({
     </Card>
   )
 }
-
-/**
- * PrescribePlanDialog — shadcn Dialog with a form to create a new
- * treatment plan: title, targetLimb select, targetAngle slider,
- * sessionsPerWeek, dailyRepGoal, notes.
- */
-function PrescribePlanDialog({
-  patientId,
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  patientId: string
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  onCreated: (plan: V2TreatmentPlan) => void
-}) {
-  const [title, setTitle] = React.useState('Upper-limb rehab plan')
-  const [targetLimb, setTargetLimb] = React.useState('upper_right')
-  const [targetAngle, setTargetAngle] = React.useState(90)
-  const [sessionsPerWeek, setSessionsPerWeek] = React.useState(5)
-  const [dailyRepGoal, setDailyRepGoal] = React.useState(20)
-  const [notes, setNotes] = React.useState('')
-  const [saving, setSaving] = React.useState(false)
-
-  const handleSubmit = async () => {
-    setSaving(true)
-    try {
-      const payload: V2CreatePlanPayload = {
-        title: title.trim() || 'Upper-limb rehab plan',
-        targetLimb,
-        targetAngle,
-        sessionsPerWeek,
-        dailyRepGoal,
-        notes: notes.trim() || undefined,
-      }
-      const data = await apiFetch<{ ok: boolean; plan: V2TreatmentPlan }>(
-        `/api/v2/patients/${patientId}/plans`,
-        { method: 'POST', json: payload },
-      )
-      if (!data.ok) throw new Error('server rejected payload')
-      onCreated(data.plan)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to prescribe plan'
-      toast.error('Prescription failed', { description: msg })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Prescribe a new treatment plan</DialogTitle>
-          <DialogDescription>
-            The previous active plan (if any) will be deactivated
-            automatically.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="plan-title">Title</Label>
-            <Input
-              id="plan-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Upper-limb rehab plan"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Target limb</Label>
-            <Select value={targetLimb ?? ''} onValueChange={setTargetLimb}>
-              <SelectTrigger className="h-9 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="upper_right">Right upper limb</SelectItem>
-                <SelectItem value="upper_left">Left upper limb</SelectItem>
-                <SelectItem value="bilateral">Bilateral</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <Label htmlFor="plan-angle">Target angle</Label>
-              <span className="font-mono font-semibold text-primary">{targetAngle}°</span>
-            </div>
-            <Slider
-              id="plan-angle"
-              value={[targetAngle]}
-              min={0}
-              max={180}
-              step={5}
-              onValueChange={(v) => setTargetAngle(v[0])}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="plan-spw">Sessions / week</Label>
-              <Input
-                id="plan-spw"
-                type="number"
-                min={1}
-                max={14}
-                value={sessionsPerWeek}
-                onChange={(e) => setSessionsPerWeek(Number(e.target.value) || 5)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="plan-daily">Daily rep goal</Label>
-              <Input
-                id="plan-daily"
-                type="number"
-                min={1}
-                max={200}
-                value={dailyRepGoal}
-                onChange={(e) => setDailyRepGoal(Number(e.target.value) || 20)}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="plan-notes">Clinical notes</Label>
-            <Textarea
-              id="plan-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional guidance for the patient…"
-              rows={3}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="gap-1.5 bg-primary text-white hover:bg-primary"
-          >
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Plus className="h-3.5 w-3.5" />
-            )}
-            Prescribe plan
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// End of PatientDetail.
-

@@ -22,6 +22,9 @@ public:
 
 	void InitializeAfterLogin();
 
+	/** Ends and saves the session (the daily goal was reached); same as the patient pressing Esc. */
+	void FinishSession();
+
 	UPROPERTY()
 	ANuhoudInputAdapter* InputAdapter;
 

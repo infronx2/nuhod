@@ -5,6 +5,7 @@
 #include "NuhoudFirstPersonPawn.h"
 #include "NuhoudInputAdapter.h"
 #include "NuhoudGameInstance.h"
+#include "NuhoudPlayerController.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -109,7 +110,18 @@ void ANuhoudTaskDirector::StartSession(ANuhoudInputAdapter* InInputAdapter)
 {
 	InputAdapter = InInputAdapter;
 	TaskCount = 0;
-	GetWorldTimerManager().SetTimer(NextTaskTimer, this, &ANuhoudTaskDirector::StartNextTask, 2.f, false);
+
+	// Tell the patient what today's plan asks for before the first task appears.
+	if (const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		const TCHAR* Hand = GI->PlanLimb == ENuhoudPlanLimb::Right ? TEXT("your right hand")
+			: GI->PlanLimb == ENuhoudPlanLimb::Left ? TEXT("your left hand") : TEXT("either hand");
+		Feedback = GI->PlanDailyTasks > 0
+			? FString::Printf(TEXT("Today: %d tasks with %s"), GI->PlanDailyTasks, Hand)
+			: FString::Printf(TEXT("Today: as many tasks as you like, with %s"), Hand);
+		FeedbackTime = 4.f;
+	}
+	GetWorldTimerManager().SetTimer(NextTaskTimer, this, &ANuhoudTaskDirector::StartNextTask, 4.f, false);
 }
 
 void ANuhoudTaskDirector::EndSession()
@@ -167,8 +179,13 @@ void ANuhoudTaskDirector::StartNextTask()
 	if (bSessionOver) return;
 	ClearTaskObjects();
 
+	// The plan's hand gets every task; a plan for both hands alternates them.
+	const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	const ENuhoudPlanLimb Limb = GI ? GI->PlanLimb : ENuhoudPlanLimb::Both;
 	Task = static_cast<ETask>(TaskCount % 3);
-	TaskSide = TaskCount % 2 == 0 ? ENuhoudHandSide::Right : ENuhoudHandSide::Left;
+	TaskSide = Limb == ENuhoudPlanLimb::Right ? ENuhoudHandSide::Right
+		: Limb == ENuhoudPlanLimb::Left ? ENuhoudHandSide::Left
+		: (TaskCount % 2 == 0 ? ENuhoudHandSide::Right : ENuhoudHandSide::Left);
 	TaskCount++;
 	TaskTime = 0.f;
 	OnTargetTime = 0.f;
@@ -237,6 +254,23 @@ void ANuhoudTaskDirector::CompleteTask(int32 Points, const FString& Message)
 	Feedback = FString::Printf(TEXT("%s   +%d"), *Message, Points);
 	FeedbackTime = 2.f;
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d done in %.1fs (+%d), difficulty %.2f"), TaskCount, TaskTime, Points, Difficulty);
+
+	// The doctor's daily goal ends the session: saved and sent like a finish with Esc.
+	const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	if (GI && GI->PlanDailyTasks > 0 && GI->SessionReps >= GI->PlanDailyTasks)
+	{
+		Feedback = FString::Printf(TEXT("Today's goal is done: %d tasks. Well done!"), GI->SessionReps);
+		FeedbackTime = 6.f;
+		UE_LOG(LogTemp, Log, TEXT("Nuhoud: daily goal of %d tasks reached, finishing the session"), GI->PlanDailyTasks);
+		AfterDelay(3.f, [this]()
+		{
+			if (ANuhoudPlayerController* PC = Cast<ANuhoudPlayerController>(GetWorld()->GetFirstPlayerController()))
+			{
+				PC->FinishSession();
+			}
+		});
+		return;
+	}
 	GetWorldTimerManager().SetTimer(NextTaskTimer, this, &ANuhoudTaskDirector::StartNextTask, 2.2f, false);
 }
 
@@ -390,7 +424,12 @@ FVector ANuhoudTaskDirector::ChooseHookLocation(ENuhoudHandSide Side) const
 	const float Reach = InputAdapter->GetReachLength(Side);
 
 	// Elevation 0 = arm hanging down, 90 = horizontal; Plane 0 = straight ahead, 90 = out to the side.
-	const float Elevation = FMath::DegreesToRadians(FMath::FRandRange(45.f, 75.f + 45.f * Difficulty));
+	// The doctor's target angle centres the hooks; difficulty moves them from 15 below it to 10 above.
+	const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	const float Target = GI ? GI->PlanTargetAngle : 60.f;
+	const float Low = FMath::Clamp(Target - 15.f + 10.f * Difficulty, 20.f, 160.f);
+	const float High = FMath::Clamp(Target + 10.f * Difficulty, Low, 165.f);
+	const float Elevation = FMath::DegreesToRadians(FMath::FRandRange(Low, High));
 	const float Plane = FMath::DegreesToRadians(FMath::FRandRange(0.f, 40.f));
 	const float Distance = Reach * FMath::Lerp(0.6f, 0.9f, Difficulty);
 

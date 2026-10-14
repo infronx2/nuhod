@@ -27,7 +27,11 @@ namespace
 	constexpr int32 TimelineMaxSamples = 5000;
 
 	constexpr float UploadTimeoutSeconds = 20.f;
+	constexpr float PlanTimeoutSeconds = 10.f;
 	const float RetryDelays[] = { 10.f, 30.f, 60.f };
+
+	// Used until the doctor's plan arrives, and when the patient has none: the clinic's starter plan.
+	constexpr float DefaultTargetAngle = 45.f;
 }
 
 UNuhoudGameInstance::UNuhoudGameInstance()
@@ -37,8 +41,83 @@ UNuhoudGameInstance::UNuhoudGameInstance()
 	CloudPatientId = TEXT("");
 	CloudAuthToken = TEXT("");
 	TrackingMode = ENuhoudTrackingMode::Camera;
+	PlanTargetAngle = DefaultTargetAngle;
+	PlanDailyTasks = 0;
+	PlanLimb = ENuhoudPlanLimb::Both;
+	bPlanFromDoctor = false;
 	RetryRound = 0;
 	ResetSession();
+}
+
+void UNuhoudGameInstance::FetchActivePlan(TFunction<void()> OnDone)
+{
+	if (!IsSignedIn())
+	{
+		OnDone();
+		return;
+	}
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(CloudBackendURL / TEXT("patients") / CloudPatientId / TEXT("plans"));
+	Request->SetVerb(TEXT("GET"));
+	Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *CloudAuthToken));
+	Request->SetTimeout(PlanTimeoutSeconds);
+
+	TWeakObjectPtr<UNuhoudGameInstance> WeakThis(this);
+	Request->OnProcessRequestComplete().BindLambda(
+		[WeakThis, OnDone = MoveTemp(OnDone)](FHttpRequestPtr, FHttpResponsePtr Resp, bool bConnected)
+		{
+			UNuhoudGameInstance* GI = WeakThis.Get();
+			if (!GI)
+			{
+				return;
+			}
+			const int32 Code = bConnected && Resp.IsValid() ? Resp->GetResponseCode() : 0;
+
+			// GET /api/v2/patients/{id}/plans: { ok, plans: [...] }, newest first.
+			TSharedPtr<FJsonObject> Json;
+			const TArray<TSharedPtr<FJsonValue>>* Plans = nullptr;
+			const TSharedPtr<FJsonObject>* Active = nullptr;
+			if (Code == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Resp->GetContentAsString()), Json)
+				&& Json.IsValid() && Json->TryGetArrayField(TEXT("plans"), Plans))
+			{
+				for (const TSharedPtr<FJsonValue>& Value : *Plans)
+				{
+					const TSharedPtr<FJsonObject>* Plan = nullptr;
+					bool bActive = false;
+					if (Value->TryGetObject(Plan) && (*Plan)->TryGetBoolField(TEXT("active"), bActive) && bActive)
+					{
+						Active = Plan;
+						break;
+					}
+				}
+			}
+
+			if (Active)
+			{
+				double Angle = DefaultTargetAngle;
+				double Tasks = 0.0;
+				FString Limb;
+				(*Active)->TryGetNumberField(TEXT("targetAngle"), Angle);
+				(*Active)->TryGetNumberField(TEXT("dailyRepGoal"), Tasks);
+				(*Active)->TryGetStringField(TEXT("targetLimb"), Limb);
+				GI->PlanTargetAngle = FMath::Clamp(static_cast<float>(Angle), 20.f, 160.f);
+				GI->PlanDailyTasks = FMath::Clamp(FMath::RoundToInt(Tasks), 0, 200);
+				GI->PlanLimb = Limb.Contains(TEXT("left")) ? ENuhoudPlanLimb::Left
+					: Limb.Contains(TEXT("right")) ? ENuhoudPlanLimb::Right : ENuhoudPlanLimb::Both;
+				GI->bPlanFromDoctor = true;
+				UE_LOG(LogTemp, Log, TEXT("Nuhoud: plan from the doctor: target %.0f deg, %d tasks, %s hand"),
+					GI->PlanTargetAngle, GI->PlanDailyTasks,
+					GI->PlanLimb == ENuhoudPlanLimb::Right ? TEXT("right") : GI->PlanLimb == ENuhoudPlanLimb::Left ? TEXT("left") : TEXT("either"));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Nuhoud: no active plan (HTTP %d), playing with the defaults: target %.0f deg, no task limit, either hand"),
+					Code, GI->PlanTargetAngle);
+			}
+			OnDone();
+		});
+	Request->ProcessRequest();
 }
 
 void UNuhoudGameInstance::Init()

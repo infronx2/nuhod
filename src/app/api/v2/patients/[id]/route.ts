@@ -40,6 +40,7 @@ export async function GET(
     db.treatmentPlan.findFirst({
       where: { patientId: id, active: true },
       orderBy: { createdAt: 'desc' },
+      include: { doctor: { select: { id: true, name: true } } },
     }),
     db.rehabSession.findMany({
       where: { patientId: id },

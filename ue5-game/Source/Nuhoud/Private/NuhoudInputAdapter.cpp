@@ -108,8 +108,8 @@ void ANuhoudInputAdapter::UpdateHand(ENuhoudHandSide Side)
 	const double Now = GetWorld()->GetTimeSeconds();
 	const FSideState& S = State(Side);
 	const bool bArmFresh = Now - S.LastArmTime < TrackingGraceSeconds;
-	H->SetHandVisible(bArmFresh);
-	if (!bArmFresh) return;
+	H->SetHandVisible(bArmFresh && IsHandActive(Side));
+	if (!bArmFresh || !IsHandActive(Side)) return;
 
 	const bool bHandFresh = Now - S.LastHandTime < TrackingGraceSeconds;
 	const FVector Forearm = (S.Arm.Wrist - S.Arm.Elbow).GetSafeNormal();

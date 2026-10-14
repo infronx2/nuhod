@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { isTargetLimb, sideToTargetLimb, targetLimbToSide } from '@/lib/plans'
 
-// POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient.
-// Body: { title?, targetLimb?, targetAngle?, sessionsPerWeek?, dailyRepGoal?, notes? }
+// POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient (the new plan
+// replaces the active one). Body: { title?, targetLimb?: "upper_right"|"upper_left"|"bilateral",
+// targetAngle?, sessionsPerWeek?, dailyRepGoal?, notes? }
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -29,7 +31,7 @@ export async function POST(
     /* empty body is fine — use defaults */
   }
 
-  const targetLimb = String(body.targetLimb || patient.affectedSide === 'left' ? 'upper_left' : 'upper_right')
+  const targetLimb = isTargetLimb(body.targetLimb) ? body.targetLimb : sideToTargetLimb(patient.affectedSide)
   const plan = await db.treatmentPlan.create({
     data: {
       patientId,
@@ -47,6 +49,10 @@ export async function POST(
     where: { patientId, id: { not: plan.id }, active: true },
     data: { active: false },
   })
+  // The plan's limb is the side the game tracks; keep the patient's profile in step with it.
+  if (patient.affectedSide !== targetLimbToSide(targetLimb)) {
+    await db.user.update({ where: { id: patientId }, data: { affectedSide: targetLimbToSide(targetLimb) } })
+  }
 
   // Notify the patient about the new plan.
   const { notifyPlanPrescribed } = await import('@/lib/notifications')

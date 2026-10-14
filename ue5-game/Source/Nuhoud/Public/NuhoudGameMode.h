@@ -32,6 +32,9 @@ protected:
 	UFUNCTION()
 	void OnLoginSuccess(const FString& PatientId, const FString& AuthToken);
 
+	/** Applies the loaded plan's hand to the input and starts handing out tasks. */
+	void BeginTasks();
+
 private:
 	ANuhoudFirstPersonPawn* GetPatientPawn() const;
 

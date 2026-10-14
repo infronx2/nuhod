@@ -18,6 +18,20 @@ python pose_server.py
 
 Build: `Engine\Build\BatchFiles\Build.bat NuhoudEditor Win64 Development -project=<path>\Nuhoud.uproject` (editor closed).
 
+## Launcher
+
+`launcher/start-nuhoud.ps1` starts the pose server (unless it is already running) and the game, and
+stops that pose server when the game closes. Run `launcher/register-protocol.ps1` once per Windows
+user so the website's **Start session** button (a `nuhoud://start` link) runs it. Edit the paths at
+the top of `start-nuhoud.ps1` if the game or the engine live elsewhere.
+
+## The doctor's plan
+
+After sign-in the game loads the patient's active plan (`GET /api/v2/patients/{id}/plans`):
+`targetAngle` centres the hook elevation, `dailyRepGoal` ends the session after that many completed
+tasks, and `targetLimb` picks the hand that gets the tasks and is measured (the other hand is hidden).
+Without a plan the game uses a 45° target, no task limit and both hands.
+
 ## Tracking
 
 At start the game uses a connected OpenXR headset (head from the headset, hands from its hand

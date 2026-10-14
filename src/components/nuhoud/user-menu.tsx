@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { motion } from 'framer-motion'
-import { LogOut, ChevronDown, Stethoscope, UserRound } from 'lucide-react'
+import { LogOut, ChevronDown, Stethoscope, UserRound, KeyRound } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import {
   DropdownMenu,
@@ -15,16 +15,20 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { GradientAvatar } from '@/components/nuhoud/gradient-avatar'
+import { ChangePasswordDialog } from '@/components/nuhoud/change-password-dialog'
 
 export function UserMenu() {
   const { user, logout } = useAuth()
   const tc = useTranslations('common')
+  const ta = useTranslations('account')
+  const [passwordOpen, setPasswordOpen] = React.useState(false)
   if (!user) return null
 
   const isDoctor = user.role.toUpperCase() === 'DOCTOR' || user.role.toUpperCase() === 'ADMIN'
   const RoleIcon = isDoctor ? Stethoscope : UserRound
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <motion.button
@@ -58,6 +62,10 @@ export function UserMenu() {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setPasswordOpen(true)} className="cursor-pointer gap-2">
+          <KeyRound className="h-4 w-4" />
+          {ta('changePassword')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => void logout()}
           className="cursor-pointer gap-2 text-rose-600 focus:text-rose-700 dark:text-rose-400"
@@ -67,5 +75,7 @@ export function UserMenu() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
+    </>
   )
 }
