@@ -2,7 +2,7 @@
   "buildCommand": "prisma generate && next build",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["sin1"],
+  "regions": ["dub1"],
   "env": {
     "NEXTAUTH_URL": "https://nuhoud.vercel.app"
   }
