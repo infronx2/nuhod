@@ -75,9 +75,22 @@ model RehabSession {
   totalReps          Int      @default(0)
   correctReps        Int      @default(0)
   maxAchievedAngle   Float    @default(0)
+  avgShoulderAngle   Float    @default(0)
+  maxElbowROM        Float    @default(0)
+  /// Hand function from the majlis game: best fist closure (0-100 %), closest thumb-index pinch (cm, 0 = none),
+  /// objects picked up by fist / by pinch, and tasks finished only with the assisted (touch) fallback.
+  gripClosureMax     Float    @default(0)
+  pinchMinCm         Float    @default(0)
+  graspCount         Int      @default(0)
+  pinchCount         Int      @default(0)
+  tasksAssisted      Int      @default(0)
+  /// The patient ended the session with the pain-stop button.
+  painStop           Boolean  @default(false)
   compensationErrors Int      @default(0)
   gamificationScore  Int      @default(0)
   angleTimeline      String?
+  /// Id the game gives a session before uploading it; a replayed offline upload reuses it instead of duplicating.
+  clientSessionId    String?  @unique
   createdAt          DateTime @default(now())
 
   @@index([patientId])

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { gameComponents, sessionCodeText } from '@/lib/fhir-session'
 
 /**
  * GET /api/v2/sessions/fhir-bundle?patientId=X&days=30
@@ -87,7 +88,7 @@ export async function GET(req: NextRequest) {
               display: 'Upper extremity range of motion',
             },
           ],
-          text: `Nuhoud ${s.limb} elbow flexion rehab session`,
+          text: sessionCodeText(s),
         },
         subject: {
           reference: `Patient/${s.patientId}`,
@@ -121,6 +122,7 @@ export async function GET(req: NextRequest) {
             code: { text: 'Gamification Score' },
             valueInteger: s.gamificationScore,
           },
+          ...gameComponents(s),
         ],
         note: s.plan?.title
           ? [{ text: `Prescribed under plan: ${s.plan.title}` }]

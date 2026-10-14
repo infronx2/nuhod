@@ -451,6 +451,8 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                     <TableHead className="text-right text-xs">Reps</TableHead>
                     <TableHead className="text-right text-xs">Correct</TableHead>
                     <TableHead className="text-right text-xs">Max°</TableHead>
+                    <TableHead className="text-right text-xs">Grip</TableHead>
+                    <TableHead className="text-right text-xs">Pinch</TableHead>
                     <TableHead className="text-right text-xs">Comp</TableHead>
                     <TableHead className="text-right text-xs">Score</TableHead>
                     <TableHead className="text-right text-xs">FHIR</TableHead>
@@ -461,6 +463,11 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                     <TableRow key={s.id} className="text-xs">
                       <TableCell className="whitespace-nowrap">
                         {formatDate(s.sessionDate)}
+                        {s.painStop && (
+                          <Badge variant="destructive" className="ml-1.5 px-1 py-0 text-[9px]">
+                            Pain stop
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="capitalize">
                         <Badge
@@ -479,6 +486,12 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                       <TableCell className="text-right font-mono">{s.totalReps}</TableCell>
                       <TableCell className="text-right font-mono text-emerald-500">{s.correctReps}</TableCell>
                       <TableCell className="text-right font-mono">{s.maxAchievedAngle.toFixed(0)}°</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {s.gripClosureMax ? `${s.gripClosureMax.toFixed(0)}%` : '—'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {s.pinchMinCm ? `${s.pinchMinCm.toFixed(1)} cm` : '—'}
+                      </TableCell>
                       <TableCell className="text-right font-mono text-rose-500">{s.compensationErrors}</TableCell>
                       <TableCell className="text-right font-mono font-semibold text-accent">{s.gamificationScore}</TableCell>
                       <TableCell className="text-right">

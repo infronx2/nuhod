@@ -57,3 +57,6 @@ server.log
 # graphify temp files
 .graphify_*
 graphify-out/
+# local database backups (contain patient data) and Python bytecode
+backup_*.json
+__pycache__/

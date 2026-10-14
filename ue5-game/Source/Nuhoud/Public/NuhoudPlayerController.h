@@ -1,184 +1,111 @@
-// ============================================================================
-// NuhoudPlayerController.h
-// ============================================================================
-// The PlayerController manages the WebSocket connection to the Python
-// pose-tracking server and dispatches tracking data to the GameMode.
-//
-// It also handles the dual-mode architecture (VR vs Flat Screen) by
-// choosing which Pawn to possess based on whether an OpenXR headset
-// is connected.
-// ============================================================================
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
-#include "IWebSocket.h" // UE5 built-in WebSocket module
+#include "IWebSocket.h"
 #include "NuhoudPlayerController.generated.h"
 
-// ---------------------------------------------------------------------------
-// Delegates
-// ---------------------------------------------------------------------------
+class UTextRenderComponent;
+class ANuhoudInputAdapter;
 
-/** Fired when a new tracking message arrives from the Python server. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
-    FOnTrackingDataReceived,
-    float, ElbowAngle,      // 0-180 degrees
-    bool, bCompensation,    // true if shoulder shrug detected
-    bool, bTrackingSuccess  // true if MediaPipe found a person
-);
-
-/** Fired when the WebSocket connection state changes. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FOnConnectionStateChanged,
-    bool, bConnected
-);
-
-/** Fired when a command is received (KEEP_GOING, HOLD, TARGET_HIT, etc.). */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FOnCommandReceived,
-    FString, Command
-);
-
-// ---------------------------------------------------------------------------
-// PlayerController
-// ---------------------------------------------------------------------------
-
-/**
- * NuhoudPlayerController — the bridge between the Python pose-tracking
- * server and the UE5 game.
- *
- * Lifecycle:
- *   1. On BeginPlay, connects to ws://localhost:8001/ws/track.
- *   2. Receives JSON messages: {"elbow_angle": 45.0, "compensation_detected": false, "tracking_success": true}
- *      — also the richer format: {"type":"tracking", "elbow_angle":..., "command":"KEEP_GOING", ...}
- *   3. Parses the JSON and dispatches ElbowAngle + Compensation + TrackingSuccess
- *      to the GameMode via ProcessTrackingData().
- *   4. Also broadcasts via delegates for the Pawn to use (drives the VR hand / cursor).
- *   5. On EndPlay, closes the WebSocket.
- *
- * VR vs Flat:
- *   The controller checks for an active OpenXR headset at BeginPlay.
- *   If found → possesses a NuhoudVRPawn (VR mode).
- *   If not  → possesses a NuhoudFlatPawn (flat screen mode).
- */
-UCLASS(Blueprintable, BlueprintType)
+UCLASS()
 class NUHOUD_API ANuhoudPlayerController : public APlayerController
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    ANuhoudPlayerController();
+	ANuhoudPlayerController();
 
-    // -----------------------------------------------------------------------
-    // AActor / APlayerController overrides
-    // -----------------------------------------------------------------------
+	virtual void Tick(float DeltaTime) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void SetupInputComponent() override;
 
-    virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual void Tick(float DeltaSeconds) override;
+	void InitializeAfterLogin();
 
-    // -----------------------------------------------------------------------
-    // WebSocket Management
-    // -----------------------------------------------------------------------
+	UPROPERTY()
+	ANuhoudInputAdapter* InputAdapter;
 
-    /** Connect to the Python pose-tracking WebSocket server. */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Network")
-    void ConnectToServer();
+	UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Tracking")
+	bool bWebSocketConnected;
 
-    /** Disconnect from the server. */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Network")
-    void DisconnectFromServer();
+	UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Tracking")
+	bool bBodyDetected;
 
-    /** Send a config message to the server (e.g., change target angle). */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Network")
-    void SendConfig(float TargetAngle, const FString& Limb, float CompensationThreshold);
+	UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Tracking")
+	float TrackingFps;
 
-    /** Is the WebSocket connected? */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Network")
-    bool IsConnected() const;
+protected:
+	/** Link to the Python pose server. A lost link is retried 3 times, then waits for R. */
+	enum class EPoseLink : uint8
+	{
+		Idle,
+		Connecting,
+		Connected,
+		WaitingToRetry,
+		GaveUp
+	};
 
-    // -----------------------------------------------------------------------
-    // Tracking Data (for Pawn consumption)
-    // -----------------------------------------------------------------------
+	void ConnectWebSocket();
+	void CloseWebSocket();
+	void OnPoseLinkUp();
+	void OnPoseLinkLost(const FString& Reason);
+	void UpdatePoseLink(float DeltaTime);
+	void SetPoseLink(EPoseLink NewState);
+	void OnWebSocketMessage(const FString& Message);
+	void OnRetryPressed();
 
-    /** The latest elbow angle (0-180 degrees). Updated each frame. */
-    UPROPERTY(BlueprintReadOnly, Category = "Nuhoud|Tracking")
-    float CurrentElbowAngle = 0.0f;
+	/** Headset sessions: hands from the headset's hand tracking, the camera only fills in for a lost hand. */
+	void UpdateHeadsetHands();
+	bool IsHeadsetHandFresh(int32 SideIndex) const;
+	void CheckPainStopTouch();
 
-    /** True if compensation was detected in the last frame. */
-    UPROPERTY(BlueprintReadOnly, Category = "Nuhoud|Tracking")
-    bool bCompensationDetected = false;
+	void UpdateStatusHUD();
+	void OnPainStopClicked();
+	void OnFinishPressed();
+	void TriggerPainStop(const TCHAR* How);
+	void EndSession();
 
-    /** True if tracking was successful (person found). */
-    UPROPERTY(BlueprintReadOnly, Category = "Nuhoud|Tracking")
-    bool bTrackingSuccess = false;
-
-    /** The latest command from the server (KEEP_GOING, HOLD, etc.). */
-    UPROPERTY(BlueprintReadOnly, Category = "Nuhoud|Tracking")
-    FString CurrentCommand = TEXT("NO_POSE");
-
-    /** True if a VR headset is connected (OpenXR). */
-    UPROPERTY(BlueprintReadOnly, Category = "Nuhoud|VR")
-    bool bIsVRMode = false;
-
-    // -----------------------------------------------------------------------
-    // Delegates
-    // -----------------------------------------------------------------------
-
-    UPROPERTY(BlueprintAssignable, Category = "Nuhoud|Events")
-    FOnTrackingDataReceived OnTrackingDataReceived;
-
-    UPROPERTY(BlueprintAssignable, Category = "Nuhoud|Events")
-    FOnConnectionStateChanged OnConnectionStateChanged;
-
-    UPROPERTY(BlueprintAssignable, Category = "Nuhoud|Events")
-    FOnCommandReceived OnCommandReceived;
-
-    // -----------------------------------------------------------------------
-    // Config
-    // -----------------------------------------------------------------------
-
-    /** The WebSocket URL of the Python server. Set in Blueprint or config. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Config")
-    FString ServerURL = TEXT("ws://localhost:8001/ws/track");
-
-    /** Patient ID to pass to the server (for auto-sync). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Config")
-    FString PatientId = TEXT("");
-
-    /** Target angle for the exercise. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Config")
-    float TargetAngle = 90.0f;
-
-    /** Which limb to track. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Config")
-    FString Limb = TEXT("right");
-
-    /** Compensation threshold (normalized Y). */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Config")
-    float CompensationThreshold = 0.05f;
+	void SpawnPainStopButton();
+	void SpawnStatusHUD();
 
 private:
-    // -----------------------------------------------------------------------
-    // WebSocket instance
-    // -----------------------------------------------------------------------
+	TSharedPtr<IWebSocket> WebSocket;
 
-    /** The UE5 WebSocket instance. */
-    TSharedPtr<IWebSocket> WebSocket;
+	/** A closed socket kept alive until the next tick: it may be closed from inside its own callback. */
+	TSharedPtr<IWebSocket> RetiredSocket;
 
-    // -----------------------------------------------------------------------
-    // Internal handlers
-    // -----------------------------------------------------------------------
+	UPROPERTY()
+	AActor* PainStopActor;
 
-    void OnWebSocketConnected();
-    void OnWebSocketConnectionError(const FString& Error);
-    void OnWebSocketClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
-    void OnWebSocketMessage(const FString& MessageString);
+	UPROPERTY()
+	UTextRenderComponent* ScoreText;
 
-    /** Parse the incoming JSON message from the Python server. */
-    void ParseTrackingMessage(const FString& MessageString);
+	UPROPERTY()
+	UTextRenderComponent* StatusText;
 
-    /** Check if an OpenXR headset is connected and set bIsVRMode. */
-    void DetectVRMode();
+	UPROPERTY()
+	UTextRenderComponent* GestureText;
+
+	UPROPERTY()
+	UTextRenderComponent* InstructionText;
+
+	EPoseLink PoseLink;
+	/** Reconnect attempts since the link was last up. */
+	int32 PoseRetries;
+	float PoseRetryTimer;
+	double PoseLinkSince;
+	double LastPoseMessageTime;
+	/** Bumped for every new socket so callbacks from a replaced socket are ignored. */
+	int32 SocketGeneration;
+	/** False while the pose server reports that the camera delivers no frames. */
+	bool bCameraStreaming;
+	double LastHeadsetHandTime[2];
+
+	float ConnectionAnimTimer;
+	bool bSessionEnded;
+	bool bGameInitialized;
+
+	/** QA builds only: end the session by itself after this many seconds (-NuhoudAutoEnd=). */
+	double AutoEndAt;
+	bool bAutoEndPain;
 };

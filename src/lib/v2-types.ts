@@ -43,6 +43,18 @@ export interface V2Session {
   compensationErrors: number
   gamificationScore: number
   angleTimeline?: string | null
+  avgShoulderAngle?: number
+  maxElbowROM?: number
+  /** Majlis game hand function: best fist closure (0-100 %). */
+  gripClosureMax?: number
+  /** Closest thumb-index pinch in cm (0 = no pinch recorded). */
+  pinchMinCm?: number
+  graspCount?: number
+  pinchCount?: number
+  tasksAssisted?: number
+  /** The patient ended the session with the pain-stop button. */
+  painStop?: boolean
+  clientSessionId?: string | null
   patient?: { name: string; email: string }
 }
 
@@ -64,12 +76,26 @@ export interface V2SaveSessionPayload {
   compensationErrors: number
   gamificationScore: number
   angleTimeline?: number[]
+  avgShoulderAngle?: number
+  maxElbowROM?: number
+  gripClosureMax?: number
+  pinchMinCm?: number
+  graspCount?: number
+  pinchCount?: number
+  tasksAssisted?: number
+  painStop?: boolean
+  /** ISO time the session happened, for uploads queued offline. */
+  sessionDate?: string
+  /** Makes the upload idempotent: re-sending the same id returns the stored session. */
+  clientSessionId?: string
 }
 
 export interface V2SaveSessionResponse {
   ok: true
   session: V2Session
   newBadges: { slug: string; name: string; nameAr: string; tier: string }[]
+  /** True when clientSessionId matched a session that was already stored. */
+  duplicate?: boolean
 }
 
 export interface V2Stats {
@@ -81,6 +107,14 @@ export interface V2Stats {
   totalCompErrors: number
   totalDurationSeconds: number
   maxAngleOverall: number
+  maxElbowROM?: number
+  avgShoulderAngle?: number
+  bestGripClosure?: number
+  bestPinchCm?: number
+  totalGrasps?: number
+  totalPinches?: number
+  totalAssisted?: number
+  painStops?: number
   distinctDays: number
   accuracyPct: number
   activity7d: { day: string; reps: number }[]

@@ -211,7 +211,7 @@ export function SessionHistory({ currentSnapshot, refreshSignal = 0 }: SessionHi
                 <Activity className="h-8 w-8 opacity-50" aria-hidden="true" />
                 <p className="text-sm">
                   {user
-                    ? 'No sessions saved yet — start tracking and press “Save session”.'
+                    ? 'No sessions saved yet — play the Nuhoud majlis game, or start tracking and press “Save session”.'
                     : 'No sessions yet — start tracking to record one.'}
                 </p>
               </div>
@@ -223,6 +223,8 @@ export function SessionHistory({ currentSnapshot, refreshSignal = 0 }: SessionHi
                     {user && <TableHead className="text-xs">Patient</TableHead>}
                     <TableHead className="text-right text-xs">Reps</TableHead>
                     <TableHead className="text-right text-xs">Max°</TableHead>
+                    {user && <TableHead className="text-right text-xs">Grip</TableHead>}
+                    {user && <TableHead className="text-right text-xs">Pinch</TableHead>}
                     <TableHead className="text-right text-xs">Comp</TableHead>
                     <TableHead className="text-right text-xs">Score</TableHead>
                     {user && <TableHead className="text-right text-xs">FHIR</TableHead>}
@@ -234,6 +236,16 @@ export function SessionHistory({ currentSnapshot, refreshSignal = 0 }: SessionHi
                         <TableRow key={s.id} className="text-xs">
                           <TableCell className="whitespace-nowrap">
                             {formatDate(s.sessionDate)}
+                            {s.source.startsWith('ue5') && (
+                              <Badge variant="secondary" className="ml-1.5 px-1 py-0 text-[9px]">
+                                {s.source === 'ue5-vr' ? 'Majlis VR' : 'Majlis'}
+                              </Badge>
+                            )}
+                            {s.painStop && (
+                              <Badge variant="destructive" className="ml-1.5 px-1 py-0 text-[9px]">
+                                Pain stop
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="font-mono text-[10px]">
                             {s.patient?.name ?? s.patientId.slice(-6)}
@@ -243,6 +255,12 @@ export function SessionHistory({ currentSnapshot, refreshSignal = 0 }: SessionHi
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {s.maxAchievedAngle.toFixed(0)}°
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {s.gripClosureMax ? `${s.gripClosureMax.toFixed(0)}%` : '—'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {s.pinchMinCm ? `${s.pinchMinCm.toFixed(1)} cm` : '—'}
                           </TableCell>
                           <TableCell className="text-right font-mono text-rose-500">
                             {s.compensationErrors}
@@ -310,6 +328,20 @@ export function SessionHistory({ currentSnapshot, refreshSignal = 0 }: SessionHi
                   <StatBox label="Total reps" value={totalReps} accent="text-primary" />
                   <StatBox label="Correct reps" value={totalCorrect} accent="text-emerald-500" />
                   <StatBox label="Total score" value={totalScore} accent="text-accent" />
+                  {user && (
+                    <>
+                      <StatBox
+                        label="Best grip"
+                        value={v2Stats?.bestGripClosure ? `${v2Stats.bestGripClosure}%` : '—'}
+                        accent="text-amber-500"
+                      />
+                      <StatBox
+                        label="Best pinch"
+                        value={v2Stats?.bestPinchCm ? `${v2Stats.bestPinchCm} cm` : '—'}
+                        accent="text-violet-400"
+                      />
+                    </>
+                  )}
                 </div>
                 <div className="mt-4 flex flex-col items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
                   <div className="flex w-full items-center justify-between">
@@ -408,7 +440,7 @@ function StatBox({
   accent,
 }: {
   label: string
-  value: number
+  value: number | string
   accent: string
 }) {
   return (

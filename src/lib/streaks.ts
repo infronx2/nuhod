@@ -36,6 +36,12 @@ export async function updateStreakOnSession(userId: string, sessionDate: Date): 
   const today = new Date(todayKey + 'T00:00:00Z')
   const gapDays = last ? Math.round((today.getTime() - last.getTime()) / 86400000) : 1
 
+  // A session from before the last training day (the game uploads offline sessions late)
+  // neither extends nor breaks the streak.
+  if (gapDays < 0) {
+    return { current: streak.currentStreak, longest: streak.longestStreak, freezesLeft: streak.freezesLeft, milestone: null, usedFreeze: false }
+  }
+
   let newCurrent = streak.currentStreak
   let usedFreeze = false
 

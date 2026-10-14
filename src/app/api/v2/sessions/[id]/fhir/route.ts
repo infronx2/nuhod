@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { gameComponents, sessionCodeText } from '@/lib/fhir-session'
 
 /**
  * GET /api/v2/sessions/[id]/fhir
@@ -58,7 +59,7 @@ export async function GET(
           display: 'Upper extremity range of motion',
         },
       ],
-      text: `Nuhoud ${session.limb} elbow flexion rehab session`,
+      text: sessionCodeText(session),
     },
     subject: {
       reference: `Patient/${session.patientId}`,
@@ -94,13 +95,6 @@ export async function GET(
       },
       {
         code: {
-          coding: [
-            {
-              system: 'http://snomed.info/sct',
-              code: '405415000',
-              display: 'Procedure withheld (situation)',
-            },
-          ],
           text: 'Correct Repetitions',
         },
         valueInteger: session.correctReps,
@@ -128,6 +122,7 @@ export async function GET(
         },
         valueInteger: session.gamificationScore,
       },
+      ...gameComponents(session),
     ],
     note: session.plan?.title
       ? [{ text: `Prescribed under plan: ${session.plan.title}` }]

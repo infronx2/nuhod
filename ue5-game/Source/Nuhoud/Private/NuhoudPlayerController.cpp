@@ -1,297 +1,617 @@
-// ============================================================================
-// NuhoudPlayerController.cpp
-// ============================================================================
-// WebSocket client + JSON parser + VR/Flat detection.
-//
-// The incoming JSON from the Python server has two formats:
-//
-//   Simple (the user's Phase-1 spec):
-//     {"elbow_angle": 45.0, "compensation_detected": false, "tracking_success": true}
-//
-//   Rich (the actual server response — superset):
-//     {
-//       "type": "tracking",
-//       "elbow_angle": 45.5,
-//       "compensation_detected": false,
-//       "command": "KEEP_GOING",
-//       "rep_count": 0,
-//       "score": 0,
-//       "max_achieved_angle": 45.5,
-//       "visibility": 0.93,
-//       "latency_ms": 12.3
-//     }
-//
-// We handle both by checking for the presence of keys.
-// ============================================================================
-
 #include "NuhoudPlayerController.h"
+#include "NuhoudGameInstance.h"
 #include "NuhoudGameMode.h"
-
-// WebSocket module
+#include "NuhoudMajlis.h"
+#include "NuhoudInputAdapter.h"
+#include "NuhoudFirstPersonPawn.h"
+#include "NuhoudHeadset.h"
+#include "NuhoudProceduralAssets.h"
+#include "NuhoudTaskDirector.h"
 #include "WebSocketsModule.h"
 #include "IWebSocket.h"
-
-// JSON
+#include "Engine/World.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "Dom/JsonObject.h"
+#include "Misc/CommandLine.h"
 #include "Serialization/JsonReader.h"
-#include "JsonUtilities.h"
+#include "Serialization/JsonSerializer.h"
 
-// VR / OpenXR
-#if WITH_EDITOR
-#include "Engine/Engine.h"
-#include "IXRTrackingSystem.h"
-#endif
+namespace
+{
+	const TCHAR* const FingerKeys[5] = { TEXT("thumb"), TEXT("index"), TEXT("middle"), TEXT("ring"), TEXT("pinky") };
 
-// Logging
-DEFINE_LOG_CATEGORY_STATIC(LogNuhoudPC, Log, All);
-#define LOG_NUHOUD_PC(Severity, Format, ...) UE_LOG(LogNuhoudPC, Severity, TEXT(Format), ##__VA_ARGS__)
+	constexpr int32 MaxPoseReconnects = 3;
+	const float ReconnectDelays[MaxPoseReconnects] = { 1.f, 2.f, 4.f };
+	constexpr double ConnectTimeoutSeconds = 6.0;
+	// The pose server sends ~25-30 messages a second, even when it sees nobody.
+	constexpr double StreamStallSeconds = 3.0;
+	constexpr double HeadsetHandFreshSeconds = 0.5;
+	constexpr float PainStopTouchCm = 7.f;
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
+	FVector ReadVector(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (!Obj->TryGetArrayField(Field, Arr) || Arr->Num() < 3) return FVector::ZeroVector;
+		return FVector((*Arr)[0]->AsNumber(), (*Arr)[1]->AsNumber(), (*Arr)[2]->AsNumber());
+	}
+
+	float ReadNumber(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field)
+	{
+		double Value = 0.0;
+		Obj->TryGetNumberField(Field, Value);
+		return static_cast<float>(Value);
+	}
+
+	bool ReadBool(const TSharedPtr<FJsonObject>& Obj, const TCHAR* Field, bool bDefault = false)
+	{
+		bool bValue = bDefault;
+		Obj->TryGetBoolField(Field, bValue);
+		return bValue;
+	}
+
+	FString GestureLabel(const FString& Gesture)
+	{
+		if (Gesture == TEXT("open")) return TEXT("OPEN HAND");
+		if (Gesture == TEXT("fist")) return TEXT("FIST");
+		if (Gesture == TEXT("point")) return TEXT("POINTING");
+		if (Gesture == TEXT("peace")) return TEXT("PEACE");
+		if (Gesture == TEXT("pinch")) return TEXT("PINCH");
+		return TEXT("");
+	}
+}
 
 ANuhoudPlayerController::ANuhoudPlayerController()
 {
-    // Enable ticking — we need it for smooth interpolation of the elbow angle.
-    PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bTickEvenWhenPaused = false;
+	PrimaryActorTick.bCanEverTick = true;
+	bShowMouseCursor = true;
+	bEnableClickEvents = true;
+
+	InputAdapter = nullptr;
+	bWebSocketConnected = false;
+	bBodyDetected = false;
+	TrackingFps = 0.f;
+	PainStopActor = nullptr;
+	ScoreText = nullptr;
+	StatusText = nullptr;
+	GestureText = nullptr;
+	InstructionText = nullptr;
+	PoseLink = EPoseLink::Idle;
+	PoseRetries = 0;
+	PoseRetryTimer = 0.f;
+	PoseLinkSince = 0.0;
+	LastPoseMessageTime = 0.0;
+	SocketGeneration = 0;
+	bCameraStreaming = true;
+	LastHeadsetHandTime[0] = LastHeadsetHandTime[1] = -100.0;
+	ConnectionAnimTimer = 0.f;
+	bSessionEnded = false;
+	bGameInitialized = false;
+	AutoEndAt = 0.0;
+	bAutoEndPain = false;
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle
-// ---------------------------------------------------------------------------
-
-void ANuhoudPlayerController::BeginPlay()
+void ANuhoudPlayerController::InitializeAfterLogin()
 {
-    Super::BeginPlay();
+	if (bGameInitialized) return;
+	bGameInitialized = true;
+	bSessionEnded = false;
 
-    // Detect VR mode.
-    DetectVRMode();
+	if (!FModuleManager::Get().IsModuleLoaded(TEXT("WebSockets")))
+	{
+		FModuleManager::Get().LoadModule(TEXT("WebSockets"));
+	}
 
-    // Auto-connect to the Python server.
-    ConnectToServer();
+	SpawnPainStopButton();
+	SpawnStatusHUD();
+	ConnectWebSocket();
+
+#if !UE_BUILD_SHIPPING
+	// QA: -NuhoudAutoEnd=<seconds> finishes the session by itself, -NuhoudAutoEndPain as a pain stop.
+	float AutoEnd = 0.f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("NuhoudAutoEnd="), AutoEnd) && AutoEnd > 0.f)
+	{
+		AutoEndAt = GetWorld()->GetTimeSeconds() + AutoEnd;
+		bAutoEndPain = FParse::Param(FCommandLine::Get(), TEXT("NuhoudAutoEndPain"));
+	}
+#endif
 }
 
 void ANuhoudPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    DisconnectFromServer();
-    Super::EndPlay(EndPlayReason);
+	// Closing the game or stopping Play still saves the session for the doctor.
+	if (bGameInitialized && !bSessionEnded)
+	{
+		EndSession();
+	}
+	CloseWebSocket();
+	RetiredSocket.Reset();
+	Super::EndPlay(EndPlayReason);
 }
 
-void ANuhoudPlayerController::Tick(float DeltaSeconds)
+void ANuhoudPlayerController::SetupInputComponent()
 {
-    Super::Tick(DeltaSeconds);
-
-    // Feed the latest tracking data to the GameMode.
-    // This runs every frame, even if no new WebSocket message arrived,
-    // so the GameMode always has the freshest elbow_angle.
-    if (bTrackingSuccess)
-    {
-        if (ANuhoudGameMode* GM = Cast<ANuhoudGameMode>(GetWorld()->GetAuthGameMode()))
-        {
-            GM->ProcessTrackingData(CurrentElbowAngle, bCompensationDetected, bTrackingSuccess);
-        }
-    }
+	Super::SetupInputComponent();
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ANuhoudPlayerController::OnPainStopClicked);
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ANuhoudPlayerController::OnFinishPressed);
+		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &ANuhoudPlayerController::OnRetryPressed);
+	}
 }
 
-// ---------------------------------------------------------------------------
-// VR Mode Detection
-// ---------------------------------------------------------------------------
-
-void ANuhoudPlayerController::DetectVRMode()
+void ANuhoudPlayerController::OnFinishPressed()
 {
-    bIsVRMode = false;
+	if (bGameInitialized && !bSessionEnded)
+	{
+		EndSession();
+	}
+}
 
-#if WITH_EDITOR
-    if (GEngine && GEngine->XRSystem.IsValid())
-    {
-        bIsVRMode = GEngine->XRSystem->IsActive();
-        LOG_NUHOUD_PC(Log, TEXT("OpenXR headset detected: %s"), bIsVRMode ? TEXT("YES → VR mode") : TEXT("NO → Flat mode"));
-    }
-#else
-    // In a packaged build, check if the XR system is active.
-    if (GEngine && GEngine->XRSystem.IsValid() && GEngine->XRSystem->IsActive())
-    {
-        bIsVRMode = true;
-    }
+void ANuhoudPlayerController::ConnectWebSocket()
+{
+	CloseWebSocket();
+
+	UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	const FString WsURL = GI ? GI->CloudWebSocketURL : TEXT("ws://127.0.0.1:8001/ws/track");
+	WebSocket = FWebSocketsModule::Get().CreateWebSocket(WsURL, TEXT("ws"));
+
+	// Callbacks of a socket that has since been replaced are ignored.
+	const int32 Generation = ++SocketGeneration;
+	TWeakObjectPtr<ANuhoudPlayerController> WeakThis(this);
+	auto IsCurrent = [WeakThis, Generation]() { return WeakThis.IsValid() && WeakThis->SocketGeneration == Generation; };
+
+	WebSocket->OnConnected().AddLambda([WeakThis, IsCurrent]()
+	{
+		if (IsCurrent()) WeakThis->OnPoseLinkUp();
+	});
+	WebSocket->OnConnectionError().AddLambda([WeakThis, IsCurrent](const FString& Error)
+	{
+		if (IsCurrent()) WeakThis->OnPoseLinkLost(Error);
+	});
+	WebSocket->OnClosed().AddLambda([WeakThis, IsCurrent](int32 StatusCode, const FString& Reason, bool)
+	{
+		if (IsCurrent()) WeakThis->OnPoseLinkLost(FString::Printf(TEXT("closed %d %s"), StatusCode, *Reason));
+	});
+	WebSocket->OnMessage().AddLambda([WeakThis, IsCurrent](const FString& Message)
+	{
+		if (IsCurrent()) WeakThis->OnWebSocketMessage(Message);
+	});
+
+	SetPoseLink(EPoseLink::Connecting);
+	WebSocket->Connect();
+	UE_LOG(LogTemp, Log, TEXT("Nuhoud: connecting to %s%s"), *WsURL,
+		PoseRetries > 0 ? *FString::Printf(TEXT(" (reconnect %d of %d)"), PoseRetries, MaxPoseReconnects) : TEXT(""));
+}
+
+void ANuhoudPlayerController::CloseWebSocket()
+{
+	// Silence the old socket first, including the close event this causes.
+	++SocketGeneration;
+	if (WebSocket.IsValid())
+	{
+		WebSocket->OnConnected().Clear();
+		WebSocket->OnConnectionError().Clear();
+		WebSocket->OnClosed().Clear();
+		WebSocket->OnMessage().Clear();
+		if (WebSocket->IsConnected()) WebSocket->Close();
+		RetiredSocket = MoveTemp(WebSocket);
+	}
+	bWebSocketConnected = false;
+}
+
+void ANuhoudPlayerController::SetPoseLink(EPoseLink NewState)
+{
+	PoseLink = NewState;
+	PoseLinkSince = FPlatformTime::Seconds();
+	bWebSocketConnected = NewState == EPoseLink::Connected;
+}
+
+void ANuhoudPlayerController::OnPoseLinkUp()
+{
+	UE_LOG(LogTemp, Log, TEXT("Nuhoud: pose server connected%s"),
+		PoseRetries > 0 ? *FString::Printf(TEXT(" after %d reconnect attempt(s)"), PoseRetries) : TEXT(""));
+	PoseRetries = 0;
+	LastPoseMessageTime = FPlatformTime::Seconds();
+	SetPoseLink(EPoseLink::Connected);
+}
+
+void ANuhoudPlayerController::OnPoseLinkLost(const FString& Reason)
+{
+	const bool bWasConnected = PoseLink == EPoseLink::Connected;
+	CloseWebSocket();
+	if (bSessionEnded)
+	{
+		SetPoseLink(EPoseLink::Idle);
+		return;
+	}
+
+	if (PoseRetries < MaxPoseReconnects)
+	{
+		PoseRetryTimer = ReconnectDelays[PoseRetries];
+		PoseRetries++;
+		SetPoseLink(EPoseLink::WaitingToRetry);
+		UE_LOG(LogTemp, Warning, TEXT("Nuhoud: pose server %s (%s) - reconnect %d of %d in %.0fs"),
+			bWasConnected ? TEXT("lost") : TEXT("unreachable"), *Reason, PoseRetries, MaxPoseReconnects, PoseRetryTimer);
+	}
+	else
+	{
+		SetPoseLink(EPoseLink::GaveUp);
+		UE_LOG(LogTemp, Error, TEXT("Nuhoud: pose server still unreachable after %d reconnects (%s). Press R to try again."),
+			MaxPoseReconnects, *Reason);
+	}
+}
+
+void ANuhoudPlayerController::UpdatePoseLink(float DeltaTime)
+{
+	const double Now = FPlatformTime::Seconds();
+	switch (PoseLink)
+	{
+	case EPoseLink::WaitingToRetry:
+		PoseRetryTimer -= DeltaTime;
+		if (PoseRetryTimer <= 0.f) ConnectWebSocket();
+		break;
+	case EPoseLink::Connecting:
+		if (Now - PoseLinkSince > ConnectTimeoutSeconds) OnPoseLinkLost(TEXT("connection timed out"));
+		break;
+	case EPoseLink::Connected:
+		// A server that stops sending (hung, or a stalled network) is treated like a dropped link.
+		if (Now - LastPoseMessageTime > StreamStallSeconds) OnPoseLinkLost(TEXT("no tracking data for 3s"));
+		break;
+	default:
+		break;
+	}
+}
+
+void ANuhoudPlayerController::OnRetryPressed()
+{
+	if (!bGameInitialized || bSessionEnded) return;
+	if (PoseLink == EPoseLink::GaveUp || PoseLink == EPoseLink::WaitingToRetry)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Nuhoud: retrying the pose server on request"));
+		PoseRetries = 0;
+		ConnectWebSocket();
+	}
+}
+
+void ANuhoudPlayerController::OnWebSocketMessage(const FString& Message)
+{
+	LastPoseMessageTime = FPlatformTime::Seconds();
+
+	TSharedPtr<FJsonObject> J;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
+	if (!FJsonSerializer::Deserialize(Reader, J) || !J.IsValid()) return;
+
+	// Older pose servers do not send "camera"; they only send while frames arrive.
+	bCameraStreaming = ReadBool(J, TEXT("camera"), true);
+	bBodyDetected = ReadBool(J, TEXT("body"));
+	TrackingFps = ReadNumber(J, TEXT("fps"));
+
+	const TSharedPtr<FJsonObject>* Arms = nullptr;
+	const TSharedPtr<FJsonObject>* Hands = nullptr;
+	J->TryGetObjectField(TEXT("arms"), Arms);
+	J->TryGetObjectField(TEXT("hands"), Hands);
+	UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+
+	for (ENuhoudHandSide Side : { ENuhoudHandSide::Right, ENuhoudHandSide::Left })
+	{
+		// A hand the headset is tracking right now is not overwritten by the camera's estimate.
+		if (IsHeadsetHandFresh(static_cast<int32>(Side))) continue;
+
+		const TCHAR* Key = Side == ENuhoudHandSide::Right ? TEXT("right") : TEXT("left");
+
+		FNuhoudArmSample Arm;
+		const TSharedPtr<FJsonObject>* ArmObj = nullptr;
+		if (Arms && (*Arms)->TryGetObjectField(Key, ArmObj))
+		{
+			Arm.bTracked = ReadBool(*ArmObj, TEXT("tracked"));
+			Arm.Shoulder = ReadVector(*ArmObj, TEXT("shoulder"));
+			Arm.Elbow = ReadVector(*ArmObj, TEXT("elbow"));
+			Arm.Wrist = ReadVector(*ArmObj, TEXT("wrist"));
+			Arm.UpperArmCm = ReadNumber(*ArmObj, TEXT("upper_arm_cm"));
+			Arm.ForearmCm = ReadNumber(*ArmObj, TEXT("forearm_cm"));
+			Arm.ShoulderElevation = ReadNumber(*ArmObj, TEXT("shoulder_elevation"));
+			Arm.ShoulderFlexion = ReadNumber(*ArmObj, TEXT("shoulder_flexion"));
+			Arm.ShoulderAbduction = ReadNumber(*ArmObj, TEXT("shoulder_abduction"));
+			Arm.ElbowAngle = ReadNumber(*ArmObj, TEXT("elbow_angle"));
+		}
+		if (InputAdapter) InputAdapter->SetArmSample(Side, Arm);
+		if (GI && Arm.bTracked)
+		{
+			GI->UpdateMaxAngle(Arm.ShoulderElevation);
+			GI->UpdateElbowAngle(Arm.ElbowAngle);
+		}
+
+		FNuhoudHandSample Hand;
+		const TSharedPtr<FJsonObject>* HandObj = nullptr;
+		if (Hands && (*Hands)->TryGetObjectField(Key, HandObj) && ReadBool(*HandObj, TEXT("tracked")))
+		{
+			Hand.bTracked = true;
+			Hand.Dir = ReadVector(*HandObj, TEXT("dir"));
+			Hand.PalmNormal = ReadVector(*HandObj, TEXT("normal"));
+			(*HandObj)->TryGetStringField(TEXT("gesture"), Hand.Gesture);
+			Hand.FingersExtended = FMath::RoundToInt(ReadNumber(*HandObj, TEXT("fingers_extended")));
+			Hand.bPinching = ReadBool(*HandObj, TEXT("is_pinching"));
+			Hand.PinchCm = ReadNumber(*HandObj, TEXT("pinch_cm"));
+
+			const TSharedPtr<FJsonObject>* Curls = nullptr;
+			if ((*HandObj)->TryGetObjectField(TEXT("curls"), Curls))
+			{
+				Hand.Curls.SetNum(5);
+				for (int32 f = 0; f < 5; f++)
+				{
+					const TSharedPtr<FJsonObject>* Finger = nullptr;
+					if ((*Curls)->TryGetObjectField(FingerKeys[f], Finger))
+					{
+						Hand.Curls[f] = FVector(ReadNumber(*Finger, TEXT("mcp")), ReadNumber(*Finger, TEXT("pip")), ReadNumber(*Finger, TEXT("dip")));
+					}
+				}
+			}
+		}
+		if (InputAdapter) InputAdapter->SetHandSample(Side, Hand);
+	}
+}
+
+bool ANuhoudPlayerController::IsHeadsetHandFresh(int32 SideIndex) const
+{
+	return FPlatformTime::Seconds() - LastHeadsetHandTime[SideIndex] < HeadsetHandFreshSeconds;
+}
+
+void ANuhoudPlayerController::UpdateHeadsetHands()
+{
+	UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	const ANuhoudFirstPersonPawn* PatientPawn = Cast<ANuhoudFirstPersonPawn>(GetPawn());
+	if (!GI || GI->TrackingMode != ENuhoudTrackingMode::Headset || !InputAdapter || !PatientPawn) return;
+
+	const FTransform Body = PatientPawn->GetBodyFrame();
+	for (ENuhoudHandSide Side : { ENuhoudHandSide::Right, ENuhoudHandSide::Left })
+	{
+		FNuhoudArmSample Arm;
+		FNuhoudHandSample Hand;
+		if (!FNuhoudHeadset::ReadHand(this, Side, Body, Arm, Hand)) continue;
+
+		LastHeadsetHandTime[static_cast<int32>(Side)] = FPlatformTime::Seconds();
+		InputAdapter->SetArmSample(Side, Arm);
+		InputAdapter->SetHandSample(Side, Hand);
+		GI->UpdateMaxAngle(Arm.ShoulderElevation);
+		GI->UpdateElbowAngle(Arm.ElbowAngle);
+	}
+}
+
+void ANuhoudPlayerController::CheckPainStopTouch()
+{
+	// In a headset there is no mouse: touching the red button with a hand is the pain stop.
+	// (On a flat screen depth is too uncertain for touch, so it stays a click there.)
+	const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	if (!GI || GI->TrackingMode != ENuhoudTrackingMode::Headset || !PainStopActor || !InputAdapter) return;
+
+	TArray<FVector> Palms;
+	InputAdapter->GetInteractionPoints(Palms);
+	for (const FVector& Palm : Palms)
+	{
+		if (FVector::Dist(Palm, PainStopActor->GetActorLocation()) < PainStopTouchCm)
+		{
+			TriggerPainStop(TEXT("touched"));
+			return;
+		}
+	}
+}
+
+void ANuhoudPlayerController::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	RetiredSocket.Reset();
+	if (!bGameInitialized) return;
+
+	if (bSessionEnded)
+	{
+		// Keep telling the patient whether the session reached their doctor.
+		const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+		if (InstructionText && GI)
+		{
+			InstructionText->SetText(FText::FromString(GI->LastSyncMessage.IsEmpty()
+				? FString(TEXT("Session finished. Rest your arm.")) : GI->LastSyncMessage));
+		}
+		return;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (AutoEndAt > 0.0 && GetWorld()->GetTimeSeconds() >= AutoEndAt)
+	{
+		AutoEndAt = 0.0;
+		if (bAutoEndPain) TriggerPainStop(TEXT("QA auto-end"));
+		else EndSession();
+		return;
+	}
 #endif
 
-    if (!bIsVRMode)
-    {
-        LOG_NUHOUD_PC(Log, TEXT("No VR headset detected → Flat screen mode"));
-    }
+	ConnectionAnimTimer += DeltaTime;
+	UpdatePoseLink(DeltaTime);
+	UpdateHeadsetHands();
+	CheckPainStopTouch();
+	if (!bSessionEnded) UpdateStatusHUD();
 }
 
-// ---------------------------------------------------------------------------
-// WebSocket — Connect / Disconnect / Send
-// ---------------------------------------------------------------------------
-
-void ANuhoudPlayerController::ConnectToServer()
+void ANuhoudPlayerController::UpdateStatusHUD()
 {
-    // Build the WebSocket URL with query parameters.
-    FString URL = FString::Printf(TEXT("%s?limb=%s&target_angle=%.1f&compensation_threshold=%.3f"),
-        *ServerURL, *Limb, TargetAngle, CompensationThreshold);
+	UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	const bool bRight = InputAdapter && InputAdapter->IsHandVisible(ENuhoudHandSide::Right);
+	const bool bLeft = InputAdapter && InputAdapter->IsHandVisible(ENuhoudHandSide::Left);
+	const bool bHeadsetHands = IsHeadsetHandFresh(0) || IsHeadsetHandFresh(1);
+	const bool bCameraNeeded = !bHeadsetHands;
 
-    // Append patient_id if available (for auto-sync to the Next.js DB).
-    if (!PatientId.IsEmpty())
-    {
-        URL += FString::Printf(TEXT("&patient_id=%s"), *PatientId);
-    }
+	if (ScoreText && GI)
+	{
+		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("SCORE %d   |   STREAK %d   |   TASKS %d   |   Esc: finish"),
+			GI->SessionScore, GI->SessionStreak, GI->SessionReps)));
+	}
 
-    LOG_NUHOUD_PC(Log, TEXT("Connecting to WebSocket: %s"), *URL);
+	FString CameraProblem;
+	FString CameraFix;
+	if (bCameraNeeded)
+	{
+		switch (PoseLink)
+		{
+		case EPoseLink::Connecting:
+		case EPoseLink::Idle:
+			CameraProblem = TEXT("Connecting to camera") + FString::ChrN((int32)ConnectionAnimTimer % 4, TEXT('.'));
+			CameraFix = TEXT("Start the pose server: python pose_server.py");
+			break;
+		case EPoseLink::WaitingToRetry:
+			CameraProblem = FString::Printf(TEXT("Camera connection lost - reconnecting (%d of %d)"), PoseRetries, MaxPoseReconnects);
+			CameraFix = TEXT("Start the pose server: python pose_server.py");
+			break;
+		case EPoseLink::GaveUp:
+			CameraProblem = TEXT("Camera not connected");
+			CameraFix = TEXT("Start the pose server (python pose_server.py), then press R");
+			break;
+		case EPoseLink::Connected:
+			if (!bCameraStreaming)
+			{
+				CameraProblem = TEXT("The camera is not sending video");
+				CameraFix = TEXT("Check the phone camera app and its connection");
+			}
+			break;
+		}
+	}
 
-    // Create the WebSocket.
-    if (!FModuleManager::Get().IsModuleLoaded("WebSockets"))
-    {
-        FModuleManager::Get().LoadModule("WebSockets");
-    }
+	if (StatusText)
+	{
+		FString Status;
+		if (!CameraProblem.IsEmpty())
+		{
+			Status = CameraProblem;
+			StatusText->SetTextRenderColor(FColor(255, 150, 50));
+		}
+		else if (!bRight && !bLeft)
+		{
+			Status = bHeadsetHands || bBodyDetected ? TEXT("Raise your hands in front of you") : TEXT("Sit facing the camera");
+			StatusText->SetTextRenderColor(FColor(255, 200, 50));
+		}
+		else
+		{
+			auto Side = [this](ENuhoudHandSide S, const TCHAR* Label) -> FString
+			{
+				if (!InputAdapter->IsHandVisible(S)) return FString::Printf(TEXT("%s  --"), Label);
+				const FNuhoudArmSample& A = InputAdapter->GetArmSample(S);
+				return FString::Printf(TEXT("%s  shoulder %.0f  %s"), Label, A.ShoulderElevation, *InputAdapter->DescribeGrip(S));
+			};
+			Status = Side(ENuhoudHandSide::Right, TEXT("R")) + TEXT("     ") + Side(ENuhoudHandSide::Left, TEXT("L"));
+			StatusText->SetTextRenderColor(FColor(80, 255, 210));
+		}
+		StatusText->SetText(FText::FromString(Status));
+	}
 
-    WebSocket = FWebSocketsModule::Get().CreateWebSocket(URL, TEXT(""));
+	if (GestureText)
+	{
+		FString Label;
+		if (bRight) Label = GestureLabel(InputAdapter->GetHandSample(ENuhoudHandSide::Right).Gesture);
+		if (Label.IsEmpty() && bLeft) Label = GestureLabel(InputAdapter->GetHandSample(ENuhoudHandSide::Left).Gesture);
+		GestureText->SetText(FText::FromString(Label));
+	}
 
-    // Bind handlers.
-    WebSocket->OnConnected().AddUObject(this, &ANuhoudPlayerController::OnWebSocketConnected);
-    WebSocket->OnConnectionError().AddUObject(this, &ANuhoudPlayerController::OnWebSocketConnectionError);
-    WebSocket->OnClosed().AddUObject(this, &ANuhoudPlayerController::OnWebSocketClosed);
-    WebSocket->OnMessage().AddUObject(this, &ANuhoudPlayerController::OnWebSocketMessage);
+	if (InstructionText)
+	{
+		const ANuhoudGameMode* GM = Cast<ANuhoudGameMode>(GetWorld()->GetAuthGameMode());
+		const FString TaskLine = GM && GM->GetDirector() ? GM->GetDirector()->GetInstruction() : FString();
 
-    // Connect.
-    WebSocket->Connect();
+		FString Instruction;
+		if (!CameraFix.IsEmpty()) Instruction = CameraFix;
+		else if (!bRight && !bLeft && TaskLine.IsEmpty()) Instruction = TEXT("Your hands will appear as you lift them");
+		else Instruction = TaskLine;
+		InstructionText->SetText(FText::FromString(Instruction));
+	}
 }
 
-void ANuhoudPlayerController::DisconnectFromServer()
+void ANuhoudPlayerController::OnPainStopClicked()
 {
-    if (WebSocket.IsValid() && WebSocket->IsConnected())
-    {
-        WebSocket->Close(1000, TEXT("client_disconnect"));
-    }
-    WebSocket.Reset();
-    LOG_NUHOUD_PC(Log, TEXT("WebSocket disconnected"));
+	if (bSessionEnded || !bGameInitialized) return;
+
+	FHitResult Hit;
+	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit) && Hit.GetActor() && Hit.GetActor()->ActorHasTag(TEXT("PainStopButton")))
+	{
+		TriggerPainStop(TEXT("clicked"));
+	}
 }
 
-void ANuhoudPlayerController::SendConfig(float NewTargetAngle, const FString& NewLimb, float NewCompensationThreshold)
+void ANuhoudPlayerController::TriggerPainStop(const TCHAR* How)
 {
-    if (!IsConnected())
-        return;
-
-    // Build the JSON config message.
-    FString JsonMsg = FString::Printf(
-        TEXT("{\"type\":\"config\",\"target_angle\":%.1f,\"limb\":\"%s\",\"compensation_threshold\":%.3f}"),
-        NewTargetAngle, *NewLimb, NewCompensationThreshold
-    );
-
-    WebSocket->Send(JsonMsg);
-    LOG_NUHOUD_PC(Log, TEXT("Sent config: %s"), *JsonMsg);
+	if (bSessionEnded) return;
+	UE_LOG(LogTemp, Log, TEXT("Nuhoud: PAIN STOP (%s)"), How);
+	if (UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		GI->MarkPainStop();
+	}
+	EndSession();
 }
 
-bool ANuhoudPlayerController::IsConnected() const
+void ANuhoudPlayerController::EndSession()
 {
-    return WebSocket.IsValid() && WebSocket->IsConnected();
+	bSessionEnded = true;
+	const ANuhoudGameMode* GM = GetWorld() ? Cast<ANuhoudGameMode>(GetWorld()->GetAuthGameMode()) : nullptr;
+	if (GM && GM->GetDirector())
+	{
+		GM->GetDirector()->EndSession();
+	}
+	if (UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		GI->SyncSessionToCloud();
+	}
+	CloseWebSocket();
+	SetPoseLink(EPoseLink::Idle);
 }
 
-// ---------------------------------------------------------------------------
-// WebSocket Event Handlers
-// ---------------------------------------------------------------------------
-
-void ANuhoudPlayerController::OnWebSocketConnected()
+void ANuhoudPlayerController::SpawnPainStopButton()
 {
-    LOG_NUHOUD_PC(Log, TEXT("✅ WebSocket connected to Python server"));
-    OnConnectionStateChanged.Broadcast(true);
+	ANuhoudGameMode* GM = Cast<ANuhoudGameMode>(GetWorld()->GetAuthGameMode());
+	UStaticMesh* Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	if (!GM || !GM->GetMajlis() || !Cylinder) return;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Button = GetWorld()->SpawnActor<AStaticMeshActor>(
+		AStaticMeshActor::StaticClass(), GM->GetMajlis()->GetPainButtonLocation() + FVector(0.f, 0.f, 1.f), FRotator::ZeroRotator, Params);
+	if (!Button) return;
+
+	Button->Tags.Add(TEXT("PainStopButton"));
+	UStaticMeshComponent* SMC = Button->GetStaticMeshComponent();
+	SMC->SetMobility(EComponentMobility::Movable);
+	SMC->SetStaticMesh(Cylinder);
+	Button->SetActorScale3D(FVector(0.09f, 0.09f, 0.02f));
+	SMC->SetMaterial(0, FNuhoudProceduralAssets::MakeLitMaterial(Button, FLinearColor(0.8f, 0.05f, 0.05f), 0.f, 0.4f,
+		FLinearColor(2.f, 0.1f, 0.1f)));
+	PainStopActor = Button;
 }
 
-void ANuhoudPlayerController::OnWebSocketConnectionError(const FString& Error)
+void ANuhoudPlayerController::SpawnStatusHUD()
 {
-    LOG_NUHOUD_PC(Error, TEXT("❌ WebSocket connection error: %s"), *Error);
-    OnConnectionStateChanged.Broadcast(false);
-}
+	const ANuhoudFirstPersonPawn* PatientPawn = Cast<ANuhoudFirstPersonPawn>(GetPawn());
+	if (!PatientPawn) return;
+	const FTransform Body = PatientPawn->GetBodyFrame();
+	const FRotator Facing(0.f, Body.Rotator().Yaw + 180.f, 0.f);
 
-void ANuhoudPlayerController::OnWebSocketClosed(int32 StatusCode, const FString& Reason, bool bWasClean)
-{
-    LOG_NUHOUD_PC(Warning, TEXT("WebSocket closed: %d %s (clean=%s)"),
-        StatusCode, *Reason, bWasClean ? TEXT("true") : TEXT("false"));
-    OnConnectionStateChanged.Broadcast(false);
-}
+	auto MakeText = [this, &Body, &Facing](const FVector& Local, float Size, const FColor& Color) -> UTextRenderComponent*
+	{
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AActor* A = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
+		if (!A) return nullptr;
 
-void ANuhoudPlayerController::OnWebSocketMessage(const FString& MessageString)
-{
-    ParseTrackingMessage(MessageString);
-}
+		UTextRenderComponent* TRC = NewObject<UTextRenderComponent>(A, TEXT("Text"));
+		A->SetRootComponent(TRC);
+		TRC->RegisterComponent();
+		TRC->SetWorldSize(Size);
+		TRC->SetTextRenderColor(Color);
+		TRC->SetHorizontalAlignment(EHTA_Center);
+		TRC->SetVerticalAlignment(EVRTA_TextCenter);
+		A->SetActorLocationAndRotation(Body.TransformPosition(Local), Facing);
+		return TRC;
+	};
 
-// ---------------------------------------------------------------------------
-// JSON Parsing
-// ---------------------------------------------------------------------------
-
-void ANuhoudPlayerController::ParseTrackingMessage(const FString& MessageString)
-{
-    // Parse the JSON message.
-    TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(MessageString);
-    TSharedPtr<FJsonObject> JsonObject;
-    if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid())
-    {
-        LOG_NUHOUD_PC(Warning, TEXT("Failed to parse JSON: %s"), *MessageString.Left(100));
-        return;
-    }
-
-    // Check the message type. The server sends either:
-    //   {"type": "tracking", ...}  — a tracking frame
-    //   {"type": "error", ...}     — an error (NO_POSE, BAD_FRAME, etc.)
-    FString MsgType;
-    JsonObject->TryGetStringField(TEXT("type"), MsgType);
-
-    if (MsgType == TEXT("error"))
-    {
-        // Error message — set tracking to failed.
-        bTrackingSuccess = false;
-        FString ErrorCode;
-        JsonObject->TryGetStringField(TEXT("code"), ErrorCode);
-        LOG_NUHOUD_PC(Warning, TEXT("Server error: %s"), *ErrorCode);
-        return;
-    }
-
-    // --- Tracking message ---
-    // Extract elbow_angle (handles both "elbow_angle" and null).
-    const TSharedPtr<FJsonValue>* AngleVal = JsonObject->Values.Find(TEXT("elbow_angle"));
-    if (AngleVal && AngleVal->IsValid())
-    {
-        float NewAngle = static_cast<float>((*AngleVal)->AsNumber());
-        if (NewAngle >= 0.0f && NewAngle <= 180.0f)
-        {
-            CurrentElbowAngle = NewAngle;
-        }
-    }
-    else
-    {
-        // elbow_angle is null → NO_POSE (person not found).
-        bTrackingSuccess = false;
-        return;
-    }
-
-    // Extract compensation_detected.
-    const TSharedPtr<FJsonValue>* CompVal = JsonObject->Values.Find(TEXT("compensation_detected"));
-    if (CompVal && CompVal->IsValid())
-    {
-        bCompensationDetected = (*CompVal)->AsBool();
-    }
-
-    // Extract tracking_success (simple format) or infer from command (rich format).
-    const TSharedPtr<FJsonValue>* SuccessVal = JsonObject->Values.Find(TEXT("tracking_success"));
-    if (SuccessVal && SuccessVal->IsValid())
-    {
-        bTrackingSuccess = (*SuccessVal)->AsBool();
-    }
-    else
-    {
-        // Rich format: if elbow_angle is non-null, tracking succeeded.
-        bTrackingSuccess = true;
-    }
-
-    // Extract command (rich format only).
-    const TSharedPtr<FJsonValue>* CmdVal = JsonObject->Values.Find(TEXT("command"));
-    if (CmdVal && CmdVal->IsValid())
-    {
-        CurrentCommand = (*CmdVal)->AsString();
-        OnCommandReceived.Broadcast(CurrentCommand);
-    }
-
-    // Broadcast the tracking data for the Pawn to use.
-    OnTrackingDataReceived.Broadcast(CurrentElbowAngle, bCompensationDetected, bTrackingSuccess);
+	// About 2.6 m ahead, at and just above eye level so reach targets below stay unobstructed.
+	ScoreText = MakeText(FVector(260.f, 0.f, 18.f), 9.f, FColor(255, 215, 90));
+	StatusText = MakeText(FVector(260.f, 0.f, 9.f), 7.f, FColor(80, 255, 210));
+	GestureText = MakeText(FVector(260.f, 0.f, 1.f), 9.f, FColor(255, 230, 150));
+	InstructionText = MakeText(FVector(260.f, 0.f, -7.f), 6.5f, FColor(220, 220, 255));
 }

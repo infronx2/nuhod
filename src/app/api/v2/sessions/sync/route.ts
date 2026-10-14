@@ -30,9 +30,19 @@ import { createNotification, notifyBadgesEarned } from '@/lib/notifications'
  *   angle_timeline?: number[],
  * }
  */
-const SYNC_API_KEY = process.env.NUHOUD_SYNC_API_KEY || 'nuhoud-internal-sync-dev-7f3a9e1b'
+// The dev key is public in the repo, so production only accepts a private key from the environment.
+// NUHOOD_SYNC_API_KEY is the misspelt name used in some .env files.
+const DEV_SYNC_API_KEY = 'nuhoud-internal-sync-dev-7f3a9e1b'
+const CONFIGURED_SYNC_API_KEY = process.env.NUHOUD_SYNC_API_KEY || process.env.NUHOOD_SYNC_API_KEY || ''
+const SYNC_API_KEY =
+  process.env.NODE_ENV === 'production'
+    ? (CONFIGURED_SYNC_API_KEY !== DEV_SYNC_API_KEY ? CONFIGURED_SYNC_API_KEY : '')
+    : (CONFIGURED_SYNC_API_KEY || DEV_SYNC_API_KEY)
 
 export async function POST(req: NextRequest) {
+  if (!SYNC_API_KEY) {
+    return NextResponse.json({ ok: false, error: 'sync disabled: NUHOUD_SYNC_API_KEY is not set' }, { status: 503 })
+  }
   const key = req.headers.get('x-nuhoud-key')
   if (!key || key !== SYNC_API_KEY) {
     return NextResponse.json({ ok: false, error: 'invalid sync key' }, { status: 401 })
@@ -76,19 +86,25 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // Award gamification badges + emit notifications (same as the manual-save path).
-  const newBadges = await awardBadges(patientId)
-  await createNotification({
-    userId: patientId,
-    type: 'session_saved',
-    title: 'Live session synced',
-    body: `${session.totalReps} reps, ${session.maxAchievedAngle.toFixed(0)}° max ROM, score ${session.gamificationScore}. Auto-saved from the camera.`,
-    severity: 'success',
-    linkType: 'session',
-    linkId: session.id,
-  })
-  if (newBadges.length > 0) {
-    await notifyBadgesEarned(patientId, newBadges.map((b) => b.slug))
+  // Award gamification badges + emit notifications (same as the manual-save path). The session is
+  // already stored, so a failure here is logged instead of failing the sync.
+  let newBadges: Awaited<ReturnType<typeof awardBadges>> = []
+  try {
+    newBadges = await awardBadges(patientId)
+    await createNotification({
+      userId: patientId,
+      type: 'session_saved',
+      title: 'Live session synced',
+      body: `${session.totalReps} reps, ${session.maxAchievedAngle.toFixed(0)}° max ROM, score ${session.gamificationScore}. Auto-saved from the camera.`,
+      severity: 'success',
+      linkType: 'session',
+      linkId: session.id,
+    })
+    if (newBadges.length > 0) {
+      await notifyBadgesEarned(patientId, newBadges.map((b) => b.slug))
+    }
+  } catch (err) {
+    console.error('[sessions/sync] badges or notifications failed after the session was saved', err)
   }
 
   return NextResponse.json({

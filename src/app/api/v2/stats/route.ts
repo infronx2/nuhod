@@ -30,6 +30,14 @@ export async function GET(req: NextRequest) {
       gamificationScore: true,
       compensationErrors: true,
       maxAchievedAngle: true,
+      avgShoulderAngle: true,
+      maxElbowROM: true,
+      gripClosureMax: true,
+      pinchMinCm: true,
+      graspCount: true,
+      pinchCount: true,
+      tasksAssisted: true,
+      painStop: true,
       durationSeconds: true,
       sessionDate: true,
     },
@@ -41,6 +49,17 @@ export async function GET(req: NextRequest) {
   const totalCompErrors = sessions.reduce((s, x) => s + x.compensationErrors, 0)
   const totalDuration = sessions.reduce((s, x) => s + x.durationSeconds, 0)
   const maxAngle = sessions.reduce((m, x) => Math.max(m, x.maxAchievedAngle), 0)
+  const maxElbowROM = sessions.reduce((m, x) => Math.max(m, x.maxElbowROM), 0)
+  const avgShoulderAngle = sessions.length > 0
+    ? sessions.reduce((s, x) => s + x.avgShoulderAngle, 0) / sessions.length
+    : 0
+  const bestGripClosure = sessions.reduce((m, x) => Math.max(m, x.gripClosureMax), 0)
+  const pinches = sessions.map((x) => x.pinchMinCm).filter((v) => v > 0)
+  const bestPinchCm = pinches.length > 0 ? Math.min(...pinches) : 0
+  const totalGrasps = sessions.reduce((s, x) => s + x.graspCount, 0)
+  const totalPinches = sessions.reduce((s, x) => s + x.pinchCount, 0)
+  const totalAssisted = sessions.reduce((s, x) => s + x.tasksAssisted, 0)
+  const painStops = sessions.filter((x) => x.painStop).length
   const distinctDays = new Set(
     sessions.map((s) => new Date(s.sessionDate).toISOString().slice(0, 10)),
   ).size
@@ -66,6 +85,14 @@ export async function GET(req: NextRequest) {
     totalCompErrors,
     totalDurationSeconds: totalDuration,
     maxAngleOverall: maxAngle,
+    maxElbowROM,
+    avgShoulderAngle: Math.round(avgShoulderAngle * 10) / 10,
+    bestGripClosure: Math.round(bestGripClosure),
+    bestPinchCm: Math.round(bestPinchCm * 10) / 10,
+    totalGrasps,
+    totalPinches,
+    totalAssisted,
+    painStops,
     distinctDays,
     accuracyPct: totalReps > 0 ? Math.round((totalCorrect / totalReps) * 10000) / 100 : 0,
     activity7d: Array.from(last7.entries()).map(([day, reps]) => ({ day, reps })),

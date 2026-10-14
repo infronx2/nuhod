@@ -1,231 +1,151 @@
-// ============================================================================
-// NuhoudGameInstance.h
-// ============================================================================
-// Persistent game instance — stores the JWT auth token, patient config,
-// and runtime mode (APK vs Pixel Streaming). Survives level transitions.
-//
-// The token is saved to a USaveGame so the patient doesn't re-login every
-// time they launch the app. The GameMode reads the token from here to
-// attach it to POST /api/v2/sessions.
-// ============================================================================
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
+#include "Engine/TimerHandle.h"
 #include "NuhoudGameInstance.generated.h"
 
-class USaveGame;
-
-// ---------------------------------------------------------------------------
-// Save Game for persisting the auth token + patient config
-// ---------------------------------------------------------------------------
+/** Where the patient's head and hands are tracked from. */
+UENUM()
+enum class ENuhoudTrackingMode : uint8
+{
+	/** Phone or webcam through the Python pose server. */
+	Camera,
+	/** A VR headset: head from the headset, hands from its hand tracking (camera as fallback). */
+	Headset
+};
 
 UCLASS()
-class NUHOUD_API UNuhoudSaveGame : public USaveGame
-{
-    GENERATED_BODY()
-
-public:
-    UNuhoudSaveGame();
-
-    /** The JWT auth token (stored encrypted in a real deployment). */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    FString AuthToken;
-
-    /** The patient ID. */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    FString PatientId;
-
-    /** The patient display name. */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    FString PatientName;
-
-    /** The treatment plan ID (if assigned). */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    FString PlanId;
-
-    /** The target angle from the plan. */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    float TargetAngle = 90.0f;
-
-    /** Which limb is affected. */
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Save")
-    FString Limb = TEXT("right");
-
-    /** Save slot name. */
-    static const FString SaveSlotName;
-};
-
-// ---------------------------------------------------------------------------
-// Runtime mode — APK vs Pixel Streaming
-// ---------------------------------------------------------------------------
-
-UENUM(BlueprintType)
-enum class ENuhoudRuntimeMode : uint8
-{
-    APK         UMETA(DisplayName = "APK — running locally on device"),
-    PixelStream UMETA(DisplayName = "Pixel Streaming — running on server, streamed to browser"),
-    Editor      UMETA(DisplayName = "Editor — running in the UE5 editor"),
-};
-
-// ---------------------------------------------------------------------------
-// Game Instance
-// ---------------------------------------------------------------------------
-
-/**
- * NuhoudGameInstance — the persistent game state.
- *
- * Lifecycle:
- *   1. OnInit() — detect runtime mode, load saved auth token.
- *   2. The LoginScreen widget calls SetAuthToken() after successful login.
- *   3. The GameMode reads GetAuthToken() to attach to HTTP requests.
- *   4. OnShutdown() — saves state.
- */
-UCLASS(Blueprintable, BlueprintType)
 class NUHOUD_API UNuhoudGameInstance : public UGameInstance
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    UNuhoudGameInstance();
+	UNuhoudGameInstance();
 
-    virtual void Init() override;
-    virtual void Shutdown() override;
+	virtual void Init() override;
 
-    // -----------------------------------------------------------------------
-    // Auth
-    // -----------------------------------------------------------------------
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Cloud")
+	FString CloudBackendURL;
 
-    /** Set the auth token after successful login. Also saves to disk. */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Auth")
-    void SetAuthToken(const FString& Token, const FString& PatientId, const FString& PatientName);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Cloud")
+	FString CloudWebSocketURL;
 
-    /** Get the JWT token (for HTTP Authorization header). */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Auth")
-    FString GetAuthToken() const { return AuthToken; }
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Cloud")
+	FString CloudPatientId;
 
-    /** Is the user logged in? */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Auth")
-    bool IsLoggedIn() const { return !AuthToken.IsEmpty(); }
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nuhoud|Cloud")
+	FString CloudAuthToken;
 
-    /** Get the patient ID. */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Auth")
-    FString GetPatientId() const { return PatientId; }
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Tracking")
+	ENuhoudTrackingMode TrackingMode;
 
-    /** Get the patient name. */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Auth")
-    FString GetPatientName() const { return PatientName; }
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionScore;
 
-    /** Log out — clears the token and saves. */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Auth")
-    void Logout();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionStreak;
 
-    // -----------------------------------------------------------------------
-    // Patient Config (loaded from the backend after login)
-    // -----------------------------------------------------------------------
+	/** Tasks completed (lantern hung, date served, date eaten). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionReps;
 
-    /** Set the treatment plan config (called after login). */
-    UFUNCTION(BlueprintCallable, Category = "Nuhoud|Config")
-    void SetPlanConfig(const FString& PlanId, float TargetAngle, const FString& Limb);
+	/** Tasks started, including ones that timed out. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionAttempts;
 
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Config")
-    FString GetPlanId() const { return PlanId; }
+	/** Completed only with the assisted (touch) fallback. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionAssisted;
 
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Config")
-    float GetTargetAngle() const { return TargetAngle; }
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionGraspCount;
 
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Config")
-    FString GetLimb() const { return Limb; }
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionPinchCount;
 
-    // -----------------------------------------------------------------------
-    // Runtime Mode
-    // -----------------------------------------------------------------------
+	/** Objects picked up by each hand, for the session's limb. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionRightGrabs;
 
-    /** Get the detected runtime mode (APK, Pixel Streaming, or Editor). */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Runtime")
-    ENuhoudRuntimeMode GetRuntimeMode() const { return RuntimeMode; }
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 SessionLeftGrabs;
 
-    /** Is this running as an APK? */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Runtime")
-    bool IsAPK() const { return RuntimeMode == ENuhoudRuntimeMode::APK; }
+	/** Best fist closure reached, 0..1. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	float SessionMaxGrip;
 
-    /** Is this running via Pixel Streaming? */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Runtime")
-    bool IsPixelStreaming() const { return RuntimeMode == ENuhoudRuntimeMode::PixelStream; }
+	/** Smallest thumb-to-index distance reached, cm. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	float SessionMinPinchCm;
 
-    /**
-     * Get the backend API URL.
-     * In Pixel Streaming mode, this is read from the URL parameters
-     * passed by the browser. In APK mode, it's the configured default.
-     */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Runtime")
-    FString GetBackendURL() const;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	float SessionMaxAngle;
 
-    /**
-     * Get the WebSocket URL for the pose server.
-     * In Pixel Streaming mode, read from URL params. In APK mode, the default.
-     */
-    UFUNCTION(BlueprintPure, Category = "Nuhoud|Runtime")
-    FString GetWebSocketURL() const;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	float SessionAvgAngle;
 
-    // -----------------------------------------------------------------------
-    // Delegates
-    // -----------------------------------------------------------------------
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	int32 AngleSampleCount;
 
-    /** Fired when the login state changes (for UI updates). */
-    UPROPERTY(BlueprintAssignable, Category = "Nuhoud|Auth|Events")
-    FSimpleMulticastDelegate OnLoginStateChanged;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	float SessionMaxElbowROM;
 
-protected:
-    // -----------------------------------------------------------------------
-    // Internal State
-    // -----------------------------------------------------------------------
+	/** The patient ended the session with the pain-stop button. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
+	bool bEndedByPainStop;
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Auth")
-    FString AuthToken;
+	/** Short status of the last cloud save, shown to the patient. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Cloud")
+	FString LastSyncMessage;
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Auth")
-    FString PatientId;
+	bool IsSignedIn() const { return !CloudPatientId.IsEmpty() && !CloudAuthToken.IsEmpty(); }
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Auth")
-    FString PatientName;
+	void ResetSession();
+	void AddScore(int32 Points);
+	void IncrementStreak();
+	void ResetStreak();
+	void IncrementReps();
+	void RecordTaskAttempt(bool bAssisted);
+	void RecordGrab(bool bPinch, bool bRightHand);
+	void RecordGripSample(float Closure, float PinchCm);
+	void UpdateMaxAngle(float Angle);
+	void UpdateElbowAngle(float Angle);
+	void MarkPainStop() { bEndedByPainStop = true; }
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Config")
-    FString PlanId;
+	/**
+	 * Saves the finished session to Saved/LocalSessions, then sends it to the doctor's dashboard.
+	 * The file is deleted only once the server has stored it, so a dropped connection or closing
+	 * the game never loses a session. Runs at most once per session.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Nuhoud|Cloud")
+	void SyncSessionToCloud();
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Config")
-    float TargetAngle = 90.0f;
+	/** Sends every saved session of the signed-in patient that has not reached the server yet. */
+	UFUNCTION(BlueprintCallable, Category = "Nuhoud|Cloud")
+	void UploadPendingSessions();
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Config")
-    FString Limb = TEXT("right");
+	static FString LocalSessionsDir();
 
-    UPROPERTY(VisibleAnywhere, Category = "Nuhoud|Runtime")
-    ENuhoudRuntimeMode RuntimeMode = ENuhoudRuntimeMode::Editor;
+private:
+	TSharedRef<class FJsonObject> BuildSessionPayload(float DurationSeconds) const;
+	void UploadSessionFile(const FString& Path);
+	void OnUploadFinished(const FString& Path, int32 Code, const FString& ResponseBody);
+	void ScheduleRetry();
 
-    // -----------------------------------------------------------------------
-    // Pixel Streaming URL parameter overrides
-    // -----------------------------------------------------------------------
+	double SessionStartSeconds;
+	FDateTime SessionStartUtc;
+	FString SessionClientId;
+	FString CurrentSessionFile;
+	bool bSessionSynced;
 
-    /** Backend URL override (from Pixel Streaming URL params). */
-    FString PixelStreamBackendURL;
+	/** Shoulder elevation over the session for the doctor's replay chart, sampled every TimelineInterval. */
+	TArray<float> AngleTimeline;
+	double TimelineInterval;
+	double TimelineLastSample;
+	float TimelinePeak;
 
-    /** WebSocket URL override (from Pixel Streaming URL params). */
-    FString PixelStreamWebSocketURL;
-
-    // -----------------------------------------------------------------------
-    // Internal
-    // -----------------------------------------------------------------------
-
-    /** Save the auth state to disk. */
-    void SaveState();
-
-    /** Load the auth state from disk. */
-    void LoadState();
-
-    /** Detect the runtime mode (APK, Pixel Streaming, or Editor). */
-    void DetectRuntimeMode();
-
-    /** Read Pixel Streaming URL parameters (backend URL, WS URL, patient ID). */
-    void ReadPixelStreamingParams();
+	TSet<FString> UploadsInFlight;
+	FTimerHandle RetryHandle;
+	int32 RetryRound;
 };
