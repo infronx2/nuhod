@@ -1,4 +1,4 @@
-// Copies MediaPipe's WASM runtime from node_modules into public/play/wasm (run before each build),
+// Copies MediaPipe's WASM runtime from node_modules into public/play/wasm (postinstall, so it also runs on Vercel),
 // so the 26 MB of binaries are not kept in git. The web majlis (/play) loads them from there.
 import fs from 'node:fs'
 import path from 'node:path'

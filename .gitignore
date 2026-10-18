@@ -61,5 +61,5 @@ graphify-out/
 backup_*.json
 __pycache__/
 
-# MediaPipe WASM, copied from node_modules at build time (scripts/copy-play-wasm.mjs)
+# MediaPipe WASM, copied from node_modules on install (scripts/copy-play-wasm.mjs)
 /public/play/wasm/

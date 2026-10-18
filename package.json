@@ -11,9 +11,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "postinstall": "prisma generate",
-    "prebuild": "node scripts/copy-play-wasm.mjs",
-    "predev": "node scripts/copy-play-wasm.mjs"
+    "postinstall": "prisma generate && node scripts/copy-play-wasm.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
