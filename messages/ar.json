@@ -466,7 +466,8 @@
     "sessionTasks": "{done}/{total} مهام",
     "bestAngle": "أعلى زاوية",
     "grip": "القبضة",
-    "painStopped": "توقف بسبب الألم"
+    "painStopped": "توقف بسبب الألم",
+    "playInBrowser": "العب من المتصفح بدلها"
   },
   "roster": {
     "title": "قائمة المرضى",
@@ -568,7 +569,8 @@
     "limbBoth": "الجانبان",
     "coachOpen": "تحدث مع مُعين",
     "defaultPlanTitle": "خطة تأهيل الطرف العلوي",
-    "cm": "{n} سم"
+    "cm": "{n} سم",
+    "srcWeb": "المجلس (المتصفح)"
   },
   "ui": {
     "correct": "صحيحة",

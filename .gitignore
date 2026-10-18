@@ -60,3 +60,6 @@ graphify-out/
 # local database backups (contain patient data) and Python bytecode
 backup_*.json
 __pycache__/
+
+# MediaPipe WASM, copied from node_modules at build time (scripts/copy-play-wasm.mjs)
+/public/play/wasm/

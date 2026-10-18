@@ -83,6 +83,11 @@ export function PatientHome() {
   }, [sessions])
 
   const startSession = () => {
+    // Phones and tablets play in the browser; a computer opens the installed game (or the browser, from the dialog).
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      window.location.href = '/play'
+      return
+    }
     setLaunchOpen(true)
     // The Nuhoud launcher registers nuhoud:// to start the camera server and the game together.
     const link = document.createElement('a')
@@ -250,7 +255,8 @@ export function PatientHome() {
             ))}
           </ol>
           <p className="text-xs text-muted-foreground">{t('launchingNote')}</p>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" asChild><a href="/play">{t('playInBrowser')}</a></Button>
             <Button onClick={() => setLaunchOpen(false)}>{t('gotIt')}</Button>
           </DialogFooter>
         </DialogContent>

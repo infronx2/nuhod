@@ -11,7 +11,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "prebuild": "node scripts/copy-play-wasm.mjs",
+    "predev": "node scripts/copy-play-wasm.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -19,6 +21,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.1.1",
     "@mdxeditor/editor": "^3.39.1",
+    "@mediapipe/tasks-vision": "^1.1.1",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -77,6 +80,7 @@
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
+    "three": "^0.186.1",
     "uuid": "^11.1.0",
     "vaul": "^1.1.2",
     "zod": "^4.0.2",
@@ -88,6 +92,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.186.0",
     "bun-types": "^1.3.4",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",

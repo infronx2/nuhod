@@ -105,7 +105,7 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
   const td = useTranslations('doctor')
   const t = useTranslations('pd')
   const locale = useLocale()
-  const sourceLabel = (src: string) => (src === 'ue5-vr' ? t('srcVr') : src.startsWith('ue') ? t('srcGame') : src === 'live' ? t('srcLive') : src)
+  const sourceLabel = (src: string) => (src === 'ue5-vr' ? t('srcVr') : src.startsWith('ue') ? t('srcGame') : src === 'web' ? t('srcWeb') : src === 'live' ? t('srcLive') : src)
   const limbLabel = (l: string) => (l === 'left' ? t('limbLeft') : l === 'bilateral' ? t('limbBoth') : t('limbRight'))
   const [detail, setDetail] = React.useState<V2PatientDetail | null>(null)
   const [stats, setStats] = React.useState<V2Stats | null>(null)

@@ -1,0 +1,63 @@
+{
+ "encourage": [
+  "encourage_1.mp3",
+  "encourage_2.mp3",
+  "encourage_3.mp3",
+  "encourage_4.mp3"
+ ],
+ "goal_reached": [
+  "goal_reached_1.mp3",
+  "goal_reached_2.mp3",
+  "goal_reached_3.mp3"
+ ],
+ "pain_stop": [
+  "pain_stop_1.mp3",
+  "pain_stop_2.mp3"
+ ],
+ "session_end": [
+  "session_end_1.mp3",
+  "session_end_2.mp3"
+ ],
+ "session_start": [
+  "session_start_1.mp3",
+  "session_start_2.mp3",
+  "session_start_3.mp3"
+ ],
+ "task_assisted": [
+  "task_assisted_1.mp3",
+  "task_assisted_2.mp3",
+  "task_assisted_3.mp3"
+ ],
+ "task_done": [
+  "task_done_1.mp3",
+  "task_done_2.mp3",
+  "task_done_3.mp3",
+  "task_done_4.mp3",
+  "task_done_5.mp3"
+ ],
+ "task_done_fast": [
+  "task_done_fast_1.mp3",
+  "task_done_fast_2.mp3",
+  "task_done_fast_3.mp3"
+ ],
+ "task_eat": [
+  "task_eat_1.mp3",
+  "task_eat_2.mp3",
+  "task_eat_3.mp3"
+ ],
+ "task_fail": [
+  "task_fail_1.mp3",
+  "task_fail_2.mp3",
+  "task_fail_3.mp3"
+ ],
+ "task_lantern": [
+  "task_lantern_1.mp3",
+  "task_lantern_2.mp3",
+  "task_lantern_3.mp3"
+ ],
+ "task_serve": [
+  "task_serve_1.mp3",
+  "task_serve_2.mp3",
+  "task_serve_3.mp3"
+ ]
+}

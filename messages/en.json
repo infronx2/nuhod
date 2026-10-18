@@ -466,7 +466,8 @@
     "sessionTasks": "{done}/{total} tasks",
     "bestAngle": "Best angle",
     "grip": "Grip",
-    "painStopped": "Stopped for pain"
+    "painStopped": "Stopped for pain",
+    "playInBrowser": "Play in the browser instead"
   },
   "roster": {
     "title": "Patient roster",
@@ -568,7 +569,8 @@
     "limbBoth": "Both",
     "coachOpen": "Ask Mu'in",
     "defaultPlanTitle": "Upper-limb rehab plan",
-    "cm": "{n} cm"
+    "cm": "{n} cm",
+    "srcWeb": "Majlis (browser)"
   },
   "ui": {
     "correct": "Correct",
