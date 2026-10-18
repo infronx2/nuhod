@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, requireRole } from '@/lib/auth'
-import { isTargetLimb, sideToTargetLimb, targetLimbToSide } from '@/lib/plans'
+import { createDefaultPlan, isTargetLimb, sideToTargetLimb, targetLimbToSide } from '@/lib/plans'
 
 // POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient (the new plan
 // replaces the active one). Body: { title?, targetLimb?: "upper_right"|"upper_left"|"bilateral",
@@ -75,11 +75,24 @@ export async function GET(
   if (!isDoctor && payload.sub !== patientId) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
-  const plans = await db.treatmentPlan.findMany({
+  const list = () => db.treatmentPlan.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },
     include: { doctor: { select: { id: true, name: true } } },
   })
+  let plans = await list()
+  // Both games read this before a session. A patient with no plan at all (the starter plan failed
+  // at sign-up, or the account predates it) gets the starter plan now, so every account can play.
+  if (plans.length === 0 && !isDoctor) {
+    const patient = await db.user.findUnique({ where: { id: patientId }, select: { id: true, role: true, affectedSide: true } })
+    if (patient?.role === 'PATIENT') {
+      try {
+        if (await createDefaultPlan(patient)) plans = await list()
+      } catch (err) {
+        console.error('[plans] starter plan failed', err)
+      }
+    }
+  }
   return NextResponse.json({ ok: true, plans })
 }
 
