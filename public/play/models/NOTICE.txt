@@ -1,1 +1,1 @@
-hand_landmarker.task and pose_landmarker_lite.task: MediaPipe models by Google, Apache License 2.0 (https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker, https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker).
+hand_landmarker.task, pose_landmarker_lite.task and pose_landmarker_full.task: MediaPipe models by Google, Apache License 2.0 (https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker, https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker).

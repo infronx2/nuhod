@@ -164,6 +164,10 @@ export class Game {
 
     const f = this.lastFrame
     if (DEBUG) {
+      // Every rendered frame's palm positions, for measuring jitter offline.
+      const w = window as unknown as { __trace?: number[][] }
+      w.__trace ??= []
+      if (w.__trace.length < 6000) w.__trace.push([t, ...this.hands.right.palm.toArray(), ...this.hands.left.palm.toArray(), camFrame ? 1 : 0, this.hands.right.visible ? 1 : 0, f?.hands.right.tracked ? 1 : 0, f?.arms.right?.tracked ? 1 : 0])
       ;(window as unknown as { __game: unknown }).__game = { hands: this.hands }
       ;(window as unknown as { __nuhoud: unknown }).__nuhoud = {
         body: f?.body,

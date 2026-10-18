@@ -66,15 +66,35 @@ class OneEuro {
   }
 }
 
+/**
+ * One Euro per point and axis, with two guards in front of it: a point the model is unsure of keeps
+ * its last position, and a jump faster than a real arm moves is cut to that speed (a single bad frame
+ * otherwise throws the hand across the room).
+ */
 class PointsFilter {
   private f: OneEuro[][] = []
-  constructor(private minCutoff: number, private beta: number) {}
-  reset() { this.f = [] }
-  apply(points: Vec[], t: number): Vec[] {
+  private last: Vec[] | null = null
+  private lastT = 0
+  /** axes: [minCutoff, beta] for x, y and depth; maxSpeed in input units per second. */
+  constructor(private axes: Array<[number, number]>, private maxSpeed = Infinity) {}
+  reset() { this.f = []; this.last = null }
+  apply(points: Vec[], t: number, unsure?: boolean[]): Vec[] {
     if (this.f.length !== points.length) {
-      this.f = points.map(() => [0, 1, 2].map(() => new OneEuro(30, this.minCutoff, this.beta)))
+      this.f = points.map(() => this.axes.map(([minCutoff, beta]) => new OneEuro(30, minCutoff, beta)))
+      this.last = null
     }
-    return points.map((p, i) => [0, 1, 2].map((k) => this.f[i][k].filter(p[k], t)) as Vec)
+    const maxStep = this.maxSpeed * Math.min(0.2, Math.max(1 / 120, t - this.lastT))
+    const input = points.map((p, i) => {
+      const prev = this.last?.[i]
+      if (!prev) return p
+      if (unsure?.[i]) return prev
+      const d = sub(p, prev)
+      const n = norm(d)
+      return n > maxStep ? add(prev, scale(d, maxStep / n)) : p
+    })
+    this.last = input
+    this.lastT = t
+    return input.map((p, i) => [0, 1, 2].map((k) => this.f[i][k].filter(p[k], t)) as Vec)
   }
 }
 
@@ -105,13 +125,24 @@ const L_EYE = 2, R_EYE = 5, L_SH = 11, R_SH = 12, L_EL = 13, R_EL = 14, L_WR = 1
 const ARM_IDS: Record<Side, [number, number, number]> = { right: [R_SH, R_EL, R_WR], left: [L_SH, L_EL, L_WR] }
 const VISIBILITY_MIN = 0.5
 const HAND_LOST_RESET_S = 0.4
+/** Below this the model is guessing a pose point (hidden or blurred); it keeps its last place. */
+const UNSURE_VISIBILITY = 0.35
+/** Image-width fraction under which a hand's side is decided by where that hand was, not by the pose. */
+const SIDE_CLOSE_CALL = 0.06
 const FINGERS: Array<[number, number, number, number]> = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]]
 
 export class Tracker {
   private pose!: PoseLandmarker
   private hands!: HandLandmarker
-  private poseFilter = new PointsFilter(1.2, 4.0)
-  private handFilters: Record<Side, PointsFilter> = { right: new PointsFilter(1.5, 3.0), left: new PointsFilter(1.5, 3.0) }
+  // Metres. Depth from one camera is the noisiest axis, so it is smoothed hardest; a rehab reach stays
+  // well under 2 m/s.
+  private poseFilter = new PointsFilter([[0.9, 2.5], [0.9, 2.5], [0.35, 1.0]], 2.0)
+  private handFilters: Record<Side, PointsFilter> = {
+    right: new PointsFilter([[1.0, 2.0], [1.0, 2.0], [0.6, 1.0]]),
+    left: new PointsFilter([[1.0, 2.0], [1.0, 2.0], [0.6, 1.0]]),
+  }
+  /** Each hand's last wrist in the image, to keep left and right from swapping on close calls. */
+  private lastWrist: Record<Side, Landmark | null> = { right: null, left: null }
   private handLastSeen: Record<Side, number> = { right: 0, left: 0 }
   private angleFilters = new Map<string, OneEuro>()
   private lastMs = -1
@@ -130,13 +161,19 @@ export class Tracker {
         return await fn('CPU')
       }
     }
+    // The full pose model places the arm (and its depth) noticeably better than lite; lite stays for
+    // phones with little memory, or ?lite.
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+    const lite = (memory !== undefined && memory <= 3) || new URLSearchParams(window.location.search).has('lite')
     t.pose = await make((delegate) => PoseLandmarker.createFromOptions(files, {
-      baseOptions: { modelAssetPath: `${base}/models/pose_landmarker_lite.task`, delegate },
-      runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: 0.6, minTrackingConfidence: 0.6,
+      baseOptions: { modelAssetPath: `${base}/models/pose_landmarker_${lite ? 'lite' : 'full'}.task`, delegate },
+      runningMode: 'VIDEO', numPoses: 1,
+      minPoseDetectionConfidence: 0.6, minPosePresenceConfidence: 0.6, minTrackingConfidence: 0.65,
     }))
     t.hands = await make((delegate) => HandLandmarker.createFromOptions(files, {
       baseOptions: { modelAssetPath: `${base}/models/hand_landmarker.task`, delegate },
-      runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: 0.6, minTrackingConfidence: 0.5,
+      runningMode: 'VIDEO', numHands: 2,
+      minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.6,
     }))
     return t
   }
@@ -169,15 +206,16 @@ export class Tracker {
     if (pr.worldLandmarks?.[0] && poseImage) {
       const raw = pr.worldLandmarks[0]
       const vis = raw.map((p) => p.visibility ?? 1)
-      const world = this.poseFilter.apply(raw.map((p) => [p.x, p.y, p.z] as Vec), t)
+      const world = this.poseFilter.apply(raw.map((p) => [p.x, p.y, p.z] as Vec), t, vis.map((v) => v < UNSURE_VISIBILITY))
       out.body = true
       out.arms = this.extractArms(world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 })), vis, t)
     }
 
     const hr = this.hands.detectForVideo(video, timeMs)
     if (hr.worldLandmarks?.length && hr.landmarks?.length) {
-      const sides = assignHandSides(hr.landmarks, hr.handedness, poseImage)
+      const sides = assignHandSides(hr.landmarks, hr.handedness, poseImage, this.lastWrist)
       for (const [side, i] of Object.entries(sides) as Array<[Side, number]>) {
+        this.lastWrist[side] = hr.landmarks[i][0]
         const world = this.handFilters[side].apply(hr.worldLandmarks[i].map((p) => [p.x, p.y, p.z] as Vec), t)
         const Hd = world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 }))
         const { dir, normal } = handFrame(Hd, side)
@@ -186,7 +224,10 @@ export class Tracker {
       }
     }
     for (const side of ['right', 'left'] as Side[]) {
-      if (!out.hands[side].tracked && t - this.handLastSeen[side] > HAND_LOST_RESET_S) this.handFilters[side].reset()
+      if (!out.hands[side].tracked && t - this.handLastSeen[side] > HAND_LOST_RESET_S) {
+        this.handFilters[side].reset()
+        this.lastWrist[side] = null
+      }
     }
     return out
   }
@@ -250,12 +291,19 @@ function fingerCurls(Hd: Vec[]): Array<[number, number, number]> {
 function assignHandSides(
   landmarks: Landmark[][],
   handedness: Array<Array<{ categoryName: string }>>,
-  pose?: Landmark[],
+  pose: Landmark[] | undefined,
+  last: Record<Side, Landmark | null>,
 ): Partial<Record<Side, number>> {
   const det = landmarks.map((lm, i) => {
     if (pose) {
       const dr = Math.hypot(lm[0].x - pose[R_WR].x, lm[0].y - pose[R_WR].y)
       const dl = Math.hypot(lm[0].x - pose[L_WR].x, lm[0].y - pose[L_WR].y)
+      // Close call (hands near each other, or the pose wrist lagging): stay with the side this hand had.
+      if (Math.abs(dl - dr) < SIDE_CLOSE_CALL && last.right && last.left) {
+        const lr = Math.hypot(lm[0].x - last.right.x, lm[0].y - last.right.y)
+        const ll = Math.hypot(lm[0].x - last.left.x, lm[0].y - last.left.y)
+        return lr <= ll ? { i, side: 'right' as Side, margin: ll - lr } : { i, side: 'left' as Side, margin: lr - ll }
+      }
       return dr <= dl ? { i, side: 'right' as Side, margin: dl - dr } : { i, side: 'left' as Side, margin: dr - dl }
     }
     // MediaPipe labels assume a mirrored selfie image; the camera feed here is not mirrored.

@@ -69,12 +69,12 @@ export class HandInput {
 
   update(now: number, dt: number) {
     for (const side of ['right', 'left'] as Side[]) {
-      this.updateHand(side, now)
+      this.updateHand(side, now, dt)
       this.updateGrip(side, now, dt)
     }
   }
 
-  private updateHand(side: Side, now: number) {
+  private updateHand(side: Side, now: number, dt: number) {
     const st = this.s[side], h = this.hands[side]
     const fresh = now - st.lastArm < TRACKING_GRACE_S && this.active[side] && st.arm
     h.setVisible(!!fresh)
@@ -82,7 +82,7 @@ export class HandInput {
     const handFresh = now - st.lastHand < TRACKING_GRACE_S
     // Keep a closed hand closed through finger dropouts so a held object is not shown slipping out.
     const keepLast = !handFresh && st.held && st.hand
-    h.update(st.arm, handFresh || keepLast ? st.hand : null)
+    h.update(st.arm, handFresh || keepLast ? st.hand : null, dt)
   }
 
   private updateGripState(st: SideState, now: number, dt: number) {

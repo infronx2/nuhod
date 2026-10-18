@@ -41,6 +41,9 @@ const OPEN_RIGHT: Vec[] = [
 ]
 
 const SKIN = new THREE.Color().setRGB(0.62, 0.42, 0.32, THREE.SRGBColorSpace)
+/** How fast the shown hand catches up with the tracked one (per second), and the jump that is shown at once. */
+const FOLLOW_RATE = 18
+const FOLLOW_SNAP_CM = 45
 
 export class RiggedHand {
   readonly root = new THREE.Group()
@@ -48,6 +51,9 @@ export class RiggedHand {
   private material!: THREE.MeshStandardMaterial
   /** Joint positions this frame (three.js cm, world space), in MediaPipe landmark order. */
   readonly landmarks: THREE.Vector3[] = Array.from({ length: 21 }, () => new THREE.Vector3())
+  /** Where the tracker says the landmarks are; the shown hand eases toward them every rendered frame. */
+  private target: THREE.Vector3[] = Array.from({ length: 21 }, () => new THREE.Vector3())
+  private snap = true
   readonly dorsal = new THREE.Vector3(0, 1, 0)
   visible = false
 
@@ -77,17 +83,23 @@ export class RiggedHand {
    * Places the hand: the wrist at the arm model's wrist, the fingers from the hand landmarks, or an
    * open hand along the forearm when the fingers are not tracked.
    */
-  update(arm: ArmSample, hand: HandSample | null) {
+  update(arm: ArmSample, hand: HandSample | null, dt: number) {
     const wrist = EYES.clone().add(ue(...arm.wrist))
     if (hand?.tracked && hand.points.length === 21) {
       const o = hand.points[0]
       for (let i = 0; i < 21; i++) {
         const p = hand.points[i]
-        this.landmarks[i].copy(wrist).add(ue(p[0] - o[0], p[1] - o[1], p[2] - o[2]))
+        this.target[i].copy(wrist).add(ue(p[0] - o[0], p[1] - o[1], p[2] - o[2]))
       }
     } else {
       this.openHandAlongForearm(arm, wrist)
     }
+    // The camera gives ~30 updates a second and the screen draws 60+: ease between them so the hand
+    // glides instead of stepping, and jump straight there when it reappears or truly moved far.
+    const far = this.landmarks[0].distanceTo(this.target[0]) > FOLLOW_SNAP_CM
+    const k = this.snap || far ? 1 : 1 - Math.exp(-dt * FOLLOW_RATE)
+    for (let i = 0; i < 21; i++) this.landmarks[i].lerp(this.target[i], k)
+    this.snap = false
     this.pose()
   }
 
@@ -101,7 +113,7 @@ export class RiggedHand {
     const mirror = this.side === 'left' ? -1 : 1
     for (let i = 0; i < 21; i++) {
       const [x, y, z] = OPEN_RIGHT[i]
-      this.landmarks[i].copy(wrist).addScaledVector(f, x).addScaledVector(right, y * mirror).addScaledVector(up, z)
+      this.target[i].copy(wrist).addScaledVector(f, x).addScaledVector(right, y * mirror).addScaledVector(up, z)
     }
   }
 
@@ -133,6 +145,7 @@ export class RiggedHand {
   }
 
   setVisible(v: boolean) {
+    if (!v) this.snap = true
     this.visible = v
     this.root.visible = v
   }
