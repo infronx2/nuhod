@@ -104,6 +104,7 @@ function ageFrom(dob: string | null | undefined): string {
  */
 export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetailProps) {
   const tr = useTranslations('roster')
+  const td = useTranslations('doctor')
   const [detail, setDetail] = React.useState<V2PatientDetail | null>(null)
   const [stats, setStats] = React.useState<V2Stats | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -258,12 +259,20 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
           aria-pressed={coachOpen}
         >
           <Sparkles className="h-3.5 w-3.5" />
-          {coachOpen ? 'Close coach' : 'Coach patient'}
+          {coachOpen ? td('closeCoach') : td('coachPatient')}
         </Button>
       </div>
 
       {coachOpen && (
-        <AgentChat patientId={patientId} patientName={detail?.patient.name} variant="embedded" />
+        <AgentChat
+          patientId={patientId}
+          patientName={detail?.patient.name}
+          variant="embedded"
+          onPlanApplied={() => {
+            void fetchDetail()
+            onPlanCreated?.()
+          }}
+        />
       )}
 
       {/* ---------- Active plan card ---------- */}

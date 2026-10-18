@@ -6,6 +6,7 @@
 #include "NuhoudInputAdapter.h"
 #include "NuhoudGameInstance.h"
 #include "NuhoudPlayerController.h"
+#include "NuhoudVoice.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -46,6 +47,8 @@ ANuhoudTaskDirector::ANuhoudTaskDirector()
 	InputAdapter = nullptr;
 	TaskLantern = nullptr;
 	TaskMarker = nullptr;
+	Voice = nullptr;
+	NextEncourageAt = 0.f;
 	Task = ETask::HangLantern;
 	TaskSide = ENuhoudHandSide::Right;
 	TaskCount = 0;
@@ -67,6 +70,7 @@ void ANuhoudTaskDirector::Setup(ANuhoudMajlis* InMajlis, ANuhoudFirstPersonPawn*
 	UWorld* World = GetWorld();
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Voice = World->SpawnActor<ANuhoudVoice>(ANuhoudVoice::StaticClass(), FTransform::Identity, Params);
 
 	for (const FTransform& Home : Majlis->GetDateHomes())
 	{
@@ -121,6 +125,7 @@ void ANuhoudTaskDirector::StartSession(ANuhoudInputAdapter* InInputAdapter)
 			: FString::Printf(TEXT("Today: as many tasks as you like, with %s"), Hand);
 		FeedbackTime = 4.f;
 	}
+	if (Voice) Voice->Say(TEXT("session_start"));
 	GetWorldTimerManager().SetTimer(NextTaskTimer, this, &ANuhoudTaskDirector::StartNextTask, 4.f, false);
 }
 
@@ -131,6 +136,12 @@ void ANuhoudTaskDirector::EndSession()
 	bTaskActive = false;
 	GetWorldTimerManager().ClearAllTimersForObject(this);
 	ClearTaskObjects();
+	if (Voice)
+	{
+		const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+		if (GI && GI->bEndedByPainStop) Voice->Say(TEXT("pain_stop"), true);
+		else Voice->Say(TEXT("session_end")); // not over the goal line that may still be playing
+	}
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: tasks stopped, the session ended after %d task(s)"), TaskCount);
 }
 
@@ -190,7 +201,14 @@ void ANuhoudTaskDirector::StartNextTask()
 	TaskTime = 0.f;
 	OnTargetTime = 0.f;
 	ProgressLogTimer = 0.f;
+	NextEncourageAt = 14.f;
 	bTaskActive = true;
+
+	// The first round explains every task; after that only now and then, so it does not nag.
+	if (Voice && (TaskCount <= 3 || FMath::FRand() < 0.35f))
+	{
+		Voice->Say(Task == ETask::HangLantern ? TEXT("task_lantern") : Task == ETask::ServeDate ? TEXT("task_serve") : TEXT("task_eat"), true);
+	}
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -253,6 +271,10 @@ void ANuhoudTaskDirector::CompleteTask(int32 Points, const FString& Message)
 
 	Feedback = FString::Printf(TEXT("%s   +%d"), *Message, Points);
 	FeedbackTime = 2.f;
+	if (Voice)
+	{
+		Voice->Say(Points < FullPoints ? TEXT("task_assisted") : TaskTime < 6.f ? TEXT("task_done_fast") : TEXT("task_done"), true);
+	}
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d done in %.1fs (+%d), difficulty %.2f"), TaskCount, TaskTime, Points, Difficulty);
 
 	// The doctor's daily goal ends the session: saved and sent like a finish with Esc.
@@ -261,6 +283,7 @@ void ANuhoudTaskDirector::CompleteTask(int32 Points, const FString& Message)
 	{
 		Feedback = FString::Printf(TEXT("Today's goal is done: %d tasks. Well done!"), GI->SessionReps);
 		FeedbackTime = 6.f;
+		if (Voice) Voice->Say(TEXT("goal_reached"), true);
 		UE_LOG(LogTemp, Log, TEXT("Nuhoud: daily goal of %d tasks reached, finishing the session"), GI->PlanDailyTasks);
 		AfterDelay(3.f, [this]()
 		{
@@ -289,6 +312,7 @@ void ANuhoudTaskDirector::FailTask()
 	}
 	Feedback = TEXT("Let's try a different one");
 	FeedbackTime = 2.f;
+	if (Voice) Voice->Say(TEXT("task_fail"), true);
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d failed after %.1fs, difficulty %.2f"), TaskCount, TaskTime, Difficulty);
 	ClearTaskObjects();
 	GetWorldTimerManager().SetTimer(NextTaskTimer, this, &ANuhoudTaskDirector::StartNextTask, 1.5f, false);
@@ -313,6 +337,13 @@ void ANuhoudTaskDirector::Tick(float DeltaTime)
 	case ETask::HangLantern: EvaluateLantern(DeltaTime); break;
 	case ETask::ServeDate: EvaluateServe(DeltaTime); break;
 	case ETask::EatDate: EvaluateEat(DeltaTime); break;
+	}
+
+	// A patient still working on a task hears a word of encouragement now and then.
+	if (bTaskActive && Voice && TaskTime > NextEncourageAt && Voice->SecondsSinceLastLine() > 6.f)
+	{
+		Voice->Say(TEXT("encourage"));
+		NextEncourageAt = TaskTime + 14.f;
 	}
 
 	if (bTaskActive && TaskTime > TaskTimeoutSeconds[static_cast<int32>(Task)])

@@ -117,4 +117,10 @@ private:
 	FString Feedback;
 	float FeedbackTime;
 	FTimerHandle NextTaskTimer;
+
+	/** Mu'in's recorded lines (silent until the voice files exist). */
+	UPROPERTY()
+	class ANuhoudVoice* Voice;
+	/** Task time at which a stuck patient may hear the next encouragement. */
+	float NextEncourageAt;
 };

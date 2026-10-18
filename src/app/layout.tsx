@@ -46,9 +46,6 @@ export const metadata: Metadata = {
     "علاج رقمي",
   ],
   authors: [{ name: "فريق نُهوض" }],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
   openGraph: {
     title: "نُهوض",
     description: "تأهيل الأطراف العلوية بعد السكتة الدماغية · ذكاء اصطناعي لحظي",

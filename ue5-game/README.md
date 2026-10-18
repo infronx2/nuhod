@@ -41,6 +41,22 @@ server link reconnects 3 times (1, 2, 4 s); after that the patient presses **R**
 Command-line options: `-NuhoudCameraOnly` (ignore a connected headset), `-NuhoudBackend=<url>/api/v2`,
 `-NuhoudPoseServer=ws://host:port/ws/track`.
 
+## Mu'in's voice
+
+Between tasks the game plays short recorded Omani-Arabic lines from Mu'in (`ANuhoudVoice`): a
+welcome, each task's instruction (always in the first round, then now and then), praise, a word
+of encouragement when a task takes long, the daily goal, a pain stop and the session end. The
+lines are WAV files in `Content/Nuhoud/Voice/<event>_<n>.wav`, generated once from
+`tools/voice/lines.json`; nothing is generated while playing, so the voice costs nothing per session.
+
+```
+pip install edge-tts
+python tools/voice/make_voice.py            # ar-OM-AbdullahNeural; --voice ar-OM-AyshaNeural for a female voice
+```
+
+The WAV files are not in git (like the rest of `Content/`). Without them the game is silent.
+`-NuhoudNoVoice` turns the voice off.
+
 ## Sessions
 
 A finished session (Esc, pain stop, or closing the game) is written to `Saved/LocalSessions/` and then

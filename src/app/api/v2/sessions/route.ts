@@ -1,8 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { Prisma, type RehabSession } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { awardBadges } from '@/lib/badges'
+import { summarizeSession } from '@/lib/muin/summary'
+
+// Room for Mu'in's after-session summary, which runs once the response is sent.
+export const maxDuration = 60
 
 // GET /api/v2/sessions?patientId=...&limit=50
 // Returns sessions for the current user (or, for doctors, for any patientId).
@@ -180,6 +184,9 @@ export async function POST(req: NextRequest) {
       }
     }
   }, undefined)
+
+  // Mu'in writes the patient's and the doctors' notes about this session after the reply is sent.
+  after(() => bestEffort('muin summary', () => summarizeSession(session.id), undefined))
 
   return NextResponse.json({ ok: true, session, newBadges, streak: streakInfo, goalAchievements: goalResults.achieved })
 }
