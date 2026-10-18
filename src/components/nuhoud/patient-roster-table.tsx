@@ -163,7 +163,7 @@ export function PatientRosterTable({ patients, loading, onView, onEditPlan, onRe
                       )}
                       {p.latestSession && (
                         <div className="font-mono text-[10px] text-muted-foreground" dir="ltr">
-                          max {p.latestSession.maxAchievedAngle.toFixed(0)}°
+                          {t('maxShort', { angle: p.latestSession.maxAchievedAngle.toFixed(0) })}
                         </div>
                       )}
                     </TableCell>

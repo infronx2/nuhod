@@ -79,8 +79,8 @@ export async function updateStreakOnSession(userId: string, sessionDate: Date): 
     await createNotification({
       userId,
       type: 'streak_milestone',
-      title: `${newCurrent}-day streak! 🔥`,
-      body: `You've trained ${newCurrent} days in a row. ${usedFreeze ? 'A streak freeze kept it alive — you have ' + rechargedFreezes + ' left.' : 'Keep it going!'}`,
+      title: `${newCurrent} أيام متتالية!`,
+      body: `تمرّنت ${newCurrent} أيام متتالية. ${usedFreeze ? 'حافظ يوم السماح على التتابع، وبقي لك ' + rechargedFreezes + '.' : 'استمر!'}`,
       severity: 'celebration',
       linkType: 'streak',
     })

@@ -1,11 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useTranslations } from 'next-intl'
 import {
-  Loader2, LogIn, UserPlus, Eye, EyeOff, Shield, UserRound, Sparkles,
+  Loader2, LogIn, UserPlus, Eye, EyeOff, Shield, UserRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +14,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError } from '@/lib/api'
+import { AuthHero } from '@/components/nuhoud/auth-hero'
+import { NeuronMark } from '@/components/nuhoud/neuron-mark'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -75,33 +76,8 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="nm-mesh-bg grid min-h-screen w-full grid-cols-1 lg:grid-cols-2">
-      <div className="relative hidden overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 lg:flex lg:flex-col lg:justify-between lg:p-12">
-        <div className="pointer-events-none absolute -left-24 top-24 h-96 w-96 rounded-full opacity-50 blur-3xl" style={{ background: 'radial-gradient(circle at center, rgba(11, 83, 148,0.45), transparent 70%)' }} aria-hidden="true" />
-        <div className="pointer-events-none absolute bottom-0 right-0 h-72 w-72 rounded-full opacity-30 blur-3xl" style={{ background: 'radial-gradient(circle at center, rgba(245,158,11,0.35), transparent 70%)' }} aria-hidden="true" />
-        <div className="relative z-10 flex items-center gap-3">
-          <motion.div initial={{ rotate: -8, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} transition={{ duration: 0.5 }} className="text-primary">
-            <NeuronMark className="h-12 w-12" />
-          </motion.div>
-          <div className="flex flex-col">
-            <span className="text-2xl font-bold tracking-tight text-white">{tc('appName')}</span>
-            <span className="text-xs text-slate-400">{t('heroHighlight')}</span>
-          </div>
-        </div>
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.5 }} className="relative z-10 flex flex-col gap-4">
-          <h1 className="max-w-md text-4xl font-bold leading-tight text-white">
-            {t('heroHeadline')}{' '}
-            <span className="bg-gradient-to-r from-primary to-emerald-300 bg-clip-text text-transparent">{t('heroHighlight')}</span>.
-          </h1>
-          <p className="max-w-md text-sm leading-relaxed text-slate-300">{t('heroDescription')}</p>
-          <ul className="flex flex-col gap-2 text-sm text-slate-300">
-            <li className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> {t('feature1')}</li>
-            <li className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> {t('feature2')}</li>
-            <li className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> {t('feature3')}</li>
-          </ul>
-        </motion.div>
-        <div className="relative z-10 text-xs text-slate-500">{t('phaseLabel')}</div>
-      </div>
+    <div className="nm-mesh-bg grid min-h-screen w-full grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
+      <AuthHero />
 
       <div className="flex items-center justify-center bg-background p-6 sm:p-10">
         <div className="w-full max-w-md">
@@ -138,7 +114,7 @@ export function AuthScreen() {
                         </button>
                       </div>
                     </div>
-                    <Button type="submit" disabled={loginBusy} className="mt-1 h-10 gap-2 bg-primary text-white hover:bg-primary">
+                    <Button type="submit" disabled={loginBusy} className="mt-1 h-11 gap-2">
                       {loginBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
                       {t('signinBtn')}
                     </Button>
@@ -200,7 +176,7 @@ export function AuthScreen() {
                         <p className="text-xs text-muted-foreground">{t('inviteCodeHint')}</p>
                       </div>
                     )}
-                    <Button type="submit" disabled={regBusy} className="mt-1 h-10 gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Button type="submit" disabled={regBusy} className="mt-1 h-11 gap-2">
                       {regBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                       {t('createAccountBtn')}
                     </Button>
@@ -212,21 +188,5 @@ export function AuthScreen() {
         </div>
       </div>
     </div>
-  )
-}
-
-
-function NeuronMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} role="img" aria-label="Nuhoud logo" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-      <g stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55">
-        <path d="M32 4 L32 12" /><path d="M52 16 L46 21" /><path d="M60 32 L52 32" /><path d="M52 48 L46 43" /><path d="M32 60 L32 52" /><path d="M12 48 L18 43" /><path d="M4 32 L12 32" /><path d="M12 16 L18 21" />
-      </g>
-      <circle cx="32" cy="32" r="6" fill="currentColor" />
-      <path d="M20 40 Q32 50 44 36" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0.85" />
-      <circle cx="20" cy="40" r="3" fill="currentColor" />
-      <circle cx="44" cy="36" r="3" fill="currentColor" />
-    </svg>
   )
 }

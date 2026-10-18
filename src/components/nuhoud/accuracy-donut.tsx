@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Check, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,7 @@ export function AccuracyDonut({
   size = 140,
   className,
 }: AccuracyDonutProps) {
+  const tu = useTranslations('ui')
   const total = Math.max(0, correctReps + compensatedReps)
   const accuracy =
     accuracyPct ?? (total > 0 ? (correctReps / total) * 100 : 0)
@@ -74,23 +76,23 @@ export function AccuracyDonut({
             {accuracy.toFixed(0)}%
           </span>
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            accuracy
+            {tu('accuracyWord')}
           </span>
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
         <div className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" aria-hidden="true" />
-          <span className="text-muted-foreground">Correct</span>
+          <span className="text-muted-foreground">{tu('correct')}</span>
           <span className="font-mono font-semibold">{correctReps}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-rose-500" aria-hidden="true" />
-          <span className="text-muted-foreground">Comp.</span>
+          <span className="text-muted-foreground">{tu('comp')}</span>
           <span className="font-mono font-semibold">{compensatedReps}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">Total</span>
+          <span className="text-muted-foreground">{tu('total')}</span>
           <span className="font-mono font-semibold">{total}</span>
         </div>
       </div>
@@ -101,7 +103,7 @@ export function AccuracyDonut({
           ) : (
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
           )}
-          <span>No reps recorded yet</span>
+          <span>{tu('noReps')}</span>
         </div>
       )}
     </div>

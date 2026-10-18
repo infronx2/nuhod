@@ -36,7 +36,7 @@ export async function POST(
     data: {
       patientId,
       doctorId: payload.sub,
-      title: String(body.title || 'Upper-limb rehab plan'),
+      title: String(body.title || 'خطة تأهيل الطرف العلوي'),
       targetLimb,
       targetAngle: clampInt(body.targetAngle, 0, 180, 90),
       sessionsPerWeek: clampInt(body.sessionsPerWeek, 1, 14, 5),

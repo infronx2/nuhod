@@ -156,8 +156,8 @@ export async function POST(req: NextRequest) {
     await createNotification({
       userId: body.patientId,
       type: 'session_saved',
-      title: painStop ? 'Session stopped for pain' : 'Session saved',
-      body: `${session.totalReps} reps, ${session.maxAchievedAngle.toFixed(0)}° max ROM, score ${session.gamificationScore}.`,
+      title: painStop ? 'توقفت الجلسة بسبب الألم' : 'تم حفظ الجلسة',
+      body: `${session.totalReps} تكرار، أقصى زاوية ${session.maxAchievedAngle.toFixed(0)}°، ${session.gamificationScore} نقطة.`,
       severity: painStop ? 'warning' : 'success',
       linkType: 'session',
       linkId: session.id,
@@ -175,8 +175,8 @@ export async function POST(req: NextRequest) {
         await createNotification({
           userId: doctorId,
           type: 'info',
-          title: `Pain stop: ${patient.name}`,
-          body: `${patient.name} ended a session with the pain-stop button after ${Math.round(session.durationSeconds / 60)} min.`,
+          title: `توقف للألم: ${patient.name}`,
+          body: `أنهى ${patient.name} الجلسة بزر الألم بعد ${Math.round(session.durationSeconds / 60)} دقيقة.`,
           severity: 'warning',
           linkType: 'session',
           linkId: session.id,

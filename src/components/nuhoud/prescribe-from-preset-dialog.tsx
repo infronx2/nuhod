@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { Stethoscope, Loader2, Plus, User } from 'lucide-react'
 import {
@@ -68,6 +69,7 @@ export function PrescribeFromPresetDialog({
   onOpenChange,
   onPrescribed,
 }: PrescribeFromPresetDialogProps) {
+  const tu = useTranslations('ui')
   const [patientId, setPatientId] = React.useState<string>('')
   const [targetAngle, setTargetAngle] = React.useState(90)
   const [sessionsPerWeek, setSessionsPerWeek] = React.useState(5)
@@ -91,7 +93,7 @@ export function PrescribeFromPresetDialog({
       await apiFetch(`/api/v2/patients/${patientId}/plans`, {
         method: 'POST',
         body: JSON.stringify({
-          title: `${preset.name} plan`,
+          title: document.documentElement.lang === 'ar' && preset.nameAr ? `خطة ${preset.nameAr}` : `${preset.name} plan`,
           targetLimb: preset.limb === 'left' ? 'upper_left' : 'upper_right',
           targetAngle,
           sessionsPerWeek,
@@ -99,14 +101,14 @@ export function PrescribeFromPresetDialog({
         }),
       })
       const patient = patients.find((p) => p.id === patientId)
-      toast.success('Plan prescribed', {
+      toast.success(tu('planPrescribed'), {
         description: `"${preset.name}" → ${patient?.name ?? 'patient'} (target ${targetAngle}°).`,
       })
       onOpenChange(false)
       onPrescribed?.()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'failed'
-      toast.error('Could not prescribe plan', { description: msg })
+      toast.error(tu('planPrescribeFailed'), { description: msg })
     } finally {
       setSaving(false)
     }
@@ -121,10 +123,10 @@ export function PrescribeFromPresetDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-5 w-5 text-primary" />
-            Prescribe exercise plan
+            {tu('prescribePlanTitle')}
           </DialogTitle>
           <DialogDescription>
-            Create a treatment plan from the "{preset.name}" preset. The target angle and limb are pre-filled from the preset.
+            {tu('prescribeDesc', { name: (document.documentElement.lang === 'ar' && preset.nameAr) || preset.name })}
           </DialogDescription>
         </DialogHeader>
 
@@ -149,10 +151,10 @@ export function PrescribeFromPresetDialog({
         <div className="space-y-3 py-1">
           {/* Patient picker */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Patient</Label>
+            <Label className="text-xs font-medium">{tu('patient')}</Label>
             <Select value={patientId ?? ''} onValueChange={setPatientId}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a patient…" />
+                <SelectValue placeholder={tu('selectPatient')} />
               </SelectTrigger>
               <SelectContent>
                 {patients.map((p) => (
@@ -166,7 +168,7 @@ export function PrescribeFromPresetDialog({
               <div className="flex items-center gap-2 rounded-md bg-muted/30 p-1.5">
                 <GradientAvatar seed={selectedPatient.avatarSeed} name={selectedPatient.name} size="h-6 w-6" />
                 <span className="text-[11px] text-muted-foreground">
-                  {selectedPatient.sessionsCount} sessions · {selectedPatient.accuracy ?? 0}% accuracy
+                  {tu('patientSummary', { sessions: selectedPatient.sessionsCount, accuracy: selectedPatient.accuracy ?? 0 })}
                 </span>
               </div>
             )}
@@ -175,7 +177,7 @@ export function PrescribeFromPresetDialog({
           {/* Target angle (pre-filled) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium">Target angle</Label>
+              <Label className="text-xs font-medium">{tu('targetAngle')}</Label>
               <span className="font-mono text-sm font-bold text-primary">{targetAngle}°</span>
             </div>
             <Slider
@@ -187,7 +189,7 @@ export function PrescribeFromPresetDialog({
               className="py-1"
             />
             <p className="text-[10px] text-muted-foreground">
-              Pre-filled from preset ({preset.targetAngle}°) · limb: {preset.limb}
+              {tu('prefilled', { angle: preset.targetAngle, limb: tu(`limb_${preset.limb}`) })}
             </p>
           </div>
 
@@ -195,7 +197,7 @@ export function PrescribeFromPresetDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium">Sessions/week</Label>
+                <Label className="text-xs font-medium">{tu('sessionsWeek')}</Label>
                 <span className="font-mono text-xs font-bold">{sessionsPerWeek}</span>
               </div>
               <Slider
@@ -209,7 +211,7 @@ export function PrescribeFromPresetDialog({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium">Daily rep goal</Label>
+                <Label className="text-xs font-medium">{tu('dailyRepGoal')}</Label>
                 <span className="font-mono text-xs font-bold">{dailyRepGoal}</span>
               </div>
               <Slider
@@ -226,16 +228,16 @@ export function PrescribeFromPresetDialog({
 
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {tu('cancel')}
           </Button>
           <Button
             size="sm"
-            className="gap-1.5 bg-gradient-to-r from-primary to-emerald-600 text-white hover:from-primary hover:to-emerald-700"
+            className="gap-1.5 bg-primary text-white hover:bg-primary/90"
             onClick={handleSubmit}
             disabled={saving || !patientId}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            Prescribe plan
+            {tu('prescribePlan')}
           </Button>
         </DialogFooter>
       </DialogContent>

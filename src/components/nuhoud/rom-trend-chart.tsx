@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import {
   LineChart,
   Line,
@@ -26,7 +27,7 @@ function formatSessionDate(iso: string): string {
   try {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    return d.toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { day: '2-digit', month: 'short' })
   } catch {
     return iso
   }
@@ -41,6 +42,7 @@ function formatSessionDate(iso: string): string {
  * we reverse to ASCENDING order for the time axis.
  */
 export function RomTrendChart({ sessions, loading, targetAngle }: RomTrendChartProps) {
+  const tu = useTranslations('ui')
   const chartData = React.useMemo(() => {
     const ascending = [...sessions].reverse()
     return ascending.map((s, i) => ({
@@ -61,9 +63,9 @@ export function RomTrendChart({ sessions, loading, targetAngle }: RomTrendChartP
     <div className="flex h-64 w-full flex-col">
       <div className="mb-2 flex items-baseline justify-between">
         <div>
-          <h3 className="text-sm font-semibold">ROM trend</h3>
+          <h3 className="text-sm font-semibold">{tu('romTrend')}</h3>
           <p className="text-[11px] text-muted-foreground">
-            Max achieved angle per session
+            {tu('romTrendDesc')}
           </p>
         </div>
         <div className="text-right">
@@ -74,7 +76,7 @@ export function RomTrendChart({ sessions, loading, targetAngle }: RomTrendChartP
             °
           </div>
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            best max
+            {tu('bestMax')}
           </div>
         </div>
       </div>
@@ -138,7 +140,7 @@ export function RomTrendChart({ sessions, loading, targetAngle }: RomTrendChartP
                 stroke="#f59e0b"
                 strokeDasharray="4 4"
                 label={{
-                  value: `Target ${targetAngle}°`,
+                  value: tu('targetDeg', { angle: targetAngle }),
                   position: 'insideTopRight',
                   fontSize: 9,
                   fill: '#f59e0b',

@@ -100,16 +100,18 @@ export function PatientHome() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('greeting', { name: user?.name.split(' ')[0] ?? '' })}</h1>
+          <h1 className="text-2xl font-semibold">{t('greeting', { name: user?.name.split(' ')[0] ?? '' })}</h1>
           <p className="text-sm text-muted-foreground">{dateLabel}</p>
         </div>
       </div>
 
-        <Card className="relative overflow-hidden border-primary/30 bg-gradient-to-br from-primary/15 via-card to-emerald-500/10 p-6 shadow-lg sm:p-8">
-          <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
+        {/* Today's session: the one thing this page is for, on the brand's teal surface. */}
+        <div className="relative overflow-hidden rounded-[1.5rem] bg-[#0B3E46] p-6 text-white shadow-[0_30px_60px_-30px_rgb(11_62_70/0.8)] sm:p-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(40rem_20rem_at_85%_-20%,rgb(59_179_189/0.35),transparent_70%)]" aria-hidden="true" />
+          <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2">
-              <span className="text-xs font-semibold tracking-wider text-primary uppercase">{t('startTitle')}</span>
-              <p className="max-w-md text-lg font-semibold leading-snug">
+              <span className="text-sm font-medium text-[#7FD8DE]">{t('startTitle')}</span>
+              <p className="max-w-md text-xl font-semibold leading-snug">
                 {limb === 'bilateral'
                   ? t('startSubtitleBoth', { reps: goal })
                   : t('startSubtitleOne', { reps: goal, hand: handLabel })}
@@ -118,18 +120,18 @@ export function PatientHome() {
             <Button
               size="lg"
               onClick={startSession}
-              className="h-16 w-full gap-3 rounded-2xl px-10 text-xl font-bold shadow-xl shadow-primary/25 sm:w-auto"
+              className="h-16 w-full gap-3 rounded-2xl bg-white px-10 text-xl font-semibold text-[#0B3E46] shadow-[0_18px_40px_-14px_rgb(0_0_0/0.5)] hover:bg-[#E2F3F1] sm:w-auto"
             >
               <Play className="h-6 w-6 fill-current" />
               {t('startButton')}
             </Button>
           </div>
-        </Card>
+        </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="flex flex-col gap-4 border-border/40 bg-card/70 p-5">
+        <Card data-tilt className="flex flex-col gap-4 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            <CheckCircle2 className="h-4 w-4 text-primary" />
             {t('todayGoal')}
           </div>
           {loading ? (
@@ -139,7 +141,7 @@ export function PatientHome() {
               <GoalRing done={doneToday} goal={goal} />
               <div className="flex flex-col gap-1">
                 <span className="text-2xl font-bold">{t('tasksDone', { done: Math.min(doneToday, goal), goal })}</span>
-                <span className={cn('text-sm', doneToday >= goal ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>
+                <span className={cn('text-sm', doneToday >= goal ? 'font-semibold text-primary' : 'text-muted-foreground')}>
                   {doneToday >= goal ? t('goalReached') : t('keepGoing', { left: goal - doneToday })}
                 </span>
               </div>
@@ -147,7 +149,7 @@ export function PatientHome() {
           )}
         </Card>
 
-        <Card className="flex flex-col gap-2 border-border/40 bg-card/70 p-5">
+        <Card data-tilt className="flex flex-col gap-2 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Target className="h-4 w-4 text-primary" />
             {t('targetAngle')}
@@ -271,7 +273,7 @@ function GoalRing({ done, goal }: { done: number; goal: number }) {
         fill="none"
         strokeWidth="12"
         strokeLinecap="round"
-        className={pct >= 1 ? 'stroke-emerald-500' : 'stroke-primary'}
+        className="stroke-primary"
         strokeDasharray={`${(c * pct).toFixed(2)} ${c.toFixed(2)}`}
       />}
       <text
@@ -316,12 +318,11 @@ function TargetArc({ target, best }: { target: number; best: number | null }) {
   }
   const tickIn = point(target, R - 14)
   const tickOut = point(target, R + 14)
-  const reached = best !== null && best >= target
   return (
     <svg viewBox="0 0 200 112" className="w-full max-w-[260px]" role="img" aria-label={`${target}°`}>
       <path d={arc(0, 180)} fill="none" strokeWidth="14" strokeLinecap="round" className="stroke-muted" />
       {best !== null && best > 0 && (
-        <path d={arc(0, best)} fill="none" strokeWidth="14" strokeLinecap="round" className={reached ? 'stroke-emerald-500' : 'stroke-primary'} />
+        <path d={arc(0, best)} fill="none" strokeWidth="14" strokeLinecap="round" className="stroke-primary" />
       )}
       <line x1={tickIn.x} y1={tickIn.y} x2={tickOut.x} y2={tickOut.y} strokeWidth="4" strokeLinecap="round" className="stroke-amber-500" />
       <text x={CX} y={CY - 14} textAnchor="middle" className="fill-foreground font-mono text-[34px] font-bold">{target}°</text>
@@ -346,7 +347,7 @@ function WeekBars({ data, goal, locale, label }: { data: { day: string; reps: nu
             contentStyle={{ background: 'rgba(15,23,42,0.96)', border: '1px solid rgba(148,163,184,0.25)', borderRadius: 8, fontSize: 11, color: '#e2e8f0' }}
             formatter={(value: number) => [value, label]}
           />
-          <ReferenceLine y={goal} stroke="#10b981" strokeDasharray="4 4" />
+          <ReferenceLine y={goal} stroke="var(--chart-4)" strokeDasharray="4 4" />
           <Bar dataKey="reps" fill="currentColor" radius={[6, 6, 0, 0]} maxBarSize={36} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>

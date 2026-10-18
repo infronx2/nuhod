@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import {
   ComposedChart,
   Line,
@@ -46,6 +47,7 @@ interface CompTrendChartProps {
  * warrants an early plan adjustment.
  */
 export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
+  const tu = useTranslations('ui')
   const data = React.useMemo(() => {
     // Oldest-first for a left-to-right timeline.
     const sorted = [...sessions]
@@ -60,7 +62,7 @@ export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
       return {
         idx: i,
         label: `S${i + 1}`,
-        date: new Date(s.sessionDate).toLocaleDateString('en-GB', {
+        date: new Date(s.sessionDate).toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), {
           day: '2-digit',
           month: 'short',
         }),
@@ -87,7 +89,7 @@ export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
         <AlertTriangle className="h-8 w-8 text-muted-foreground/40" />
-        <p className="text-sm text-muted-foreground">No sessions recorded yet.</p>
+        <p className="text-sm text-muted-foreground">{tu('noSessions')}</p>
       </div>
     )
   }
@@ -97,10 +99,10 @@ export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <TrendingDown className="h-4 w-4 text-amber-500" />
-          <h3 className="text-sm font-semibold">Compensation trend</h3>
+          <h3 className="text-sm font-semibold">{tu('compTrend')}</h3>
         </div>
         <span className="text-[10px] text-muted-foreground">
-          {data.length} sessions · target ≤ {CLINICAL_THRESHOLD}/session
+          {tu('compTrendDesc', { n: data.length, max: CLINICAL_THRESHOLD })}
         </span>
       </div>
 
@@ -150,7 +152,7 @@ export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
               strokeDasharray="4 4"
               strokeWidth={1.5}
               label={{
-                value: `threshold ${CLINICAL_THRESHOLD}`,
+                value: tu('threshold', { n: CLINICAL_THRESHOLD }),
                 fontSize: 9,
                 fill: '#f43f5e',
                 position: 'insideTopRight',
@@ -176,8 +178,7 @@ export function CompTrendChart({ sessions, loading }: CompTrendChartProps) {
       </div>
 
       <p className="text-[10px] leading-relaxed text-muted-foreground/70">
-        Rose dots = per-session compensation errors · amber area = 5-session rolling average ·
-        red line = clinical threshold. A rising trend signals a compensation-pattern regression.
+        {tu('compLegend')}
       </p>
     </div>
   )

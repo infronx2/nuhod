@@ -24,7 +24,7 @@ interface GripTrendChartProps {
 
 function formatSessionDate(iso: string): string {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { day: '2-digit', month: 'short' })
 }
 
 /**

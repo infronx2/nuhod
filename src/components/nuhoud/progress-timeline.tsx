@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import {
   Stethoscope,
@@ -28,10 +29,10 @@ interface ProgressTimelineProps {
 }
 
 const TYPE_META: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string; ring: string; label: string }> = {
-  plan_prescribed: { icon: Stethoscope, color: 'text-primary', ring: 'bg-primary/15 border-primary/40', label: 'Plan' },
-  session_saved: { icon: Activity, color: 'text-accent', ring: 'bg-accent/15 border-accent/40', label: 'Session' },
-  coach_summary: { icon: Sparkles, color: 'text-primary', ring: 'bg-primary/15 border-primary/40', label: 'Coach' },
-  info: { icon: Bell, color: 'text-secondary', ring: 'bg-secondary/15 border-secondary/40', label: 'Info' },
+  plan_prescribed: { icon: Stethoscope, color: 'text-primary', ring: 'bg-primary/15 border-primary/40', label: 'plan' },
+  session_saved: { icon: Activity, color: 'text-accent', ring: 'bg-accent/15 border-accent/40', label: 'session' },
+  coach_summary: { icon: Sparkles, color: 'text-primary', ring: 'bg-primary/15 border-primary/40', label: 'coach' },
+  info: { icon: Bell, color: 'text-secondary', ring: 'bg-secondary/15 border-secondary/40', label: 'info' },
 }
 
 const HIDDEN_TYPES = new Set(['badge_earned', 'streak_milestone'])
@@ -46,6 +47,7 @@ const HIDDEN_TYPES = new Set(['badge_earned', 'streak_milestone'])
  * narrative of progress over time — the "story" of their recovery.
  */
 export function ProgressTimeline({ patientId, loading = false }: ProgressTimelineProps) {
+  const tu = useTranslations('ui')
   const [entries, setEntries] = React.useState<TimelineEntry[]>([])
   const [loadState, setLoadState] = React.useState<'idle' | 'loading' | 'done' | 'error'>('idle')
 
@@ -85,7 +87,7 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Progress timeline</h3>
+          <h3 className="text-sm font-semibold">{tu('timeline')}</h3>
         </div>
         <div className="relative space-y-3 pl-6">
           <div className="absolute top-2 bottom-2 left-[7px] w-px bg-border/40" />
@@ -110,9 +112,9 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/40">
           <TrendingUp className="h-5 w-5 text-muted-foreground/50" />
         </div>
-        <p className="text-sm text-muted-foreground">No milestones yet</p>
+        <p className="text-sm text-muted-foreground">{tu('noMilestones')}</p>
         <p className="text-xs text-muted-foreground/60">
-          Plans and sessions will appear here as a timeline.
+          {tu('timelineHint')}
         </p>
       </div>
     )
@@ -123,10 +125,10 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Progress timeline</h3>
+          <h3 className="text-sm font-semibold">{tu('timeline')}</h3>
         </div>
         <span className="text-[10px] text-muted-foreground">
-          {entries.length} milestones
+          {tu('milestones', { n: entries.length })}
         </span>
       </div>
 
@@ -159,7 +161,7 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
               <div className="rounded-lg border border-border/40 bg-card/60 p-2.5 transition-colors hover:border-border/70 hover:bg-card/80">
                 <div className="flex items-center justify-between gap-2">
                   <span className={cn('text-[10px] font-bold uppercase tracking-wide', meta.color)}>
-                    {meta.label}
+                    {tu(`tl_${meta.label}`)}
                   </span>
                   <span className="text-[9px] text-muted-foreground/70">
                     {timeAgo(entry.createdAt)}
@@ -182,14 +184,12 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
 
 function timeAgo(iso: string): string {
   const d = new Date(iso)
-  const diff = Date.now() - d.getTime()
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return 'just now'
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 7) return `${day}d ago`
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  const sec = Math.round((d.getTime() - Date.now()) / 1000)
+  const rtf = new Intl.RelativeTimeFormat(document.documentElement.lang === 'ar' ? 'ar' : 'en', { numeric: 'auto' })
+  const abs = Math.abs(sec)
+  if (abs < 60) return rtf.format(0, 'second')
+  if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour')
+  if (abs < 604800) return rtf.format(Math.round(sec / 86400), 'day')
+  return d.toLocaleDateString(document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB', { day: '2-digit', month: 'short' })
 }

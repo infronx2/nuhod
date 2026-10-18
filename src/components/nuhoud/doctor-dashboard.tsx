@@ -28,6 +28,7 @@ interface DoctorDashboardProps {
  * library follow below.
  */
 export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
+  const tu = useTranslations('ui')
   const t = useTranslations('doctor')
   const [patients, setPatients] = React.useState<V2PatientSummary[]>([])
   const [globalStats, setGlobalStats] = React.useState<V2Stats | null>(null)
@@ -45,7 +46,7 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
       setPatients(data.patients ?? [])
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load roster'
-      toast.error('Roster load failed', { description: msg })
+      toast.error(tu('rosterFailed'), { description: msg })
     } finally {
       setLoading(false)
     }

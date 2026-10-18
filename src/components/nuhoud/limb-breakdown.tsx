@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { Hand, Activity, Target, Dumbbell } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -45,6 +46,7 @@ const LIMB_META: Record<string, { label: string; color: string; ring: string }> 
  * and more compensation errors.
  */
 export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
+  const tu = useTranslations('ui')
   const stats = React.useMemo<LimbStat[]>(() => {
     const byLimb = new Map<string, LimbStat>()
     for (const s of sessions) {
@@ -94,7 +96,7 @@ export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
         <Hand className="h-8 w-8 text-muted-foreground/40" />
-        <p className="text-sm text-muted-foreground">No limb data yet.</p>
+        <p className="text-sm text-muted-foreground">{tu('noLimb')}</p>
       </div>
     )
   }
@@ -103,7 +105,7 @@ export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-1.5">
         <Hand className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">Per-limb breakdown</h3>
+        <h3 className="text-sm font-semibold">{tu('perLimb')}</h3>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -121,18 +123,18 @@ export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
               )}
             >
               <div className="flex items-center justify-between">
-                <span className={cn('text-xs font-bold uppercase tracking-wide', meta.color)}>
-                  {meta.label} side
+                <span className={cn('text-xs font-semibold', meta.color)}>
+                  {tu(`side_${s.limb}`)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
-                  {Math.round(s.share * 100)}% of reps
+                  {tu('shareOfReps', { pct: Math.round(s.share * 100) })}
                 </span>
               </div>
 
               {/* Share bar */}
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
                 <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-primary to-emerald-500"
+                  className="h-full rounded-full bg-primary"
                   initial={{ width: 0 }}
                   animate={{ width: `${s.share * 100}%` }}
                   transition={{ duration: 0.5, delay: i * 0.08 + 0.1 }}
@@ -140,14 +142,14 @@ export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
               </div>
 
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                <Stat icon={Activity} label="Sessions" value={String(s.sessions)} />
-                <Stat icon={Dumbbell} label="Reps" value={String(s.reps)} />
-                <Stat icon={Target} label="Accuracy" value={`${s.accuracy}%`} />
-                <Stat icon={Hand} label="Max ROM" value={`${Math.round(s.maxAngle)}°`} />
+                <Stat icon={Activity} label={tu('sessions')} value={String(s.sessions)} />
+                <Stat icon={Dumbbell} label={tu('reps')} value={String(s.reps)} />
+                <Stat icon={Target} label={tu('accuracy')} value={`${s.accuracy}%`} />
+                <Stat icon={Hand} label={tu('maxRom')} value={`${Math.round(s.maxAngle)}°`} />
               </div>
 
               <div className="mt-0.5 flex items-center justify-between border-t border-border/30 pt-1.5">
-                <span className="text-[10px] text-muted-foreground">Compensation errors</span>
+                <span className="text-[10px] text-muted-foreground">{tu('compErrors')}</span>
                 <span
                   className={cn(
                     'font-mono text-xs font-bold',
@@ -156,7 +158,7 @@ export function LimbBreakdown({ sessions, loading }: LimbBreakdownProps) {
                 >
                   {s.compErrors}
                   <span className="ml-1 text-[10px] font-normal text-muted-foreground">
-                    ({(s.sessions > 0 ? s.compErrors / s.sessions : 0).toFixed(1)}/sess)
+                    {tu('perSession', { n: (s.sessions > 0 ? s.compErrors / s.sessions : 0).toFixed(1) })}
                   </span>
                 </span>
               </div>

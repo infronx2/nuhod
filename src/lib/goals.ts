@@ -61,8 +61,8 @@ export async function updateGoalsOnSession(
         await createNotification({
           userId: patientId,
           type: 'goal_achieved',
-          title: `Goal achieved: ${g.title}! 🎯`,
-          body: `You reached ${newValue.toFixed(0)}${g.type === 'rom_target' || g.type === 'accuracy' ? '°' : ''} (target ${g.targetValue}). Outstanding work!`,
+          title: `حققت هدفك: ${g.title}`,
+          body: `وصلت إلى ${newValue.toFixed(0)}${g.type === 'rom_target' ? '°' : g.type === 'accuracy' ? '٪' : ''} (الهدف ${g.targetValue}). عمل رائع!`,
           severity: 'celebration',
           linkType: 'goal',
           linkId: g.id,

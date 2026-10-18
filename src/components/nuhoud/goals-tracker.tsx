@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Target, Trophy, Plus, Loader2, Check, Flame, Activity, Gauge, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -55,6 +56,7 @@ interface GoalsTrackerProps {
  * checkmark + trophy. Doctors see a delete button per goal.
  */
 export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
+  const tu = useTranslations('ui')
   const { user } = useAuth()
   const isDoctor = user?.role.toUpperCase() === 'DOCTOR' || user?.role.toUpperCase() === 'ADMIN'
   const [goals, setGoals] = React.useState<Goal[]>([])
@@ -86,10 +88,10 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
     try {
       await apiFetch(`/api/v2/goals/${goalId}`, { method: 'DELETE' })
       setGoals((prev) => prev.filter((g) => g.id !== goalId))
-      toast.success('Goal deleted', { description: `"${title}" removed.` })
+      toast.success(tu('goalDeleted'), { description: `"${title}" removed.` })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'failed'
-      toast.error('Could not delete goal', { description: msg })
+      toast.error(tu('goalDeleteFailed'), { description: msg })
     } finally {
       setDeletingId(null)
     }
@@ -100,7 +102,7 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
       <Card className="border-border/40 bg-card/60 p-4 backdrop-blur">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Goals</h3>
+          <h3 className="text-sm font-semibold">{tu('goals')}</h3>
         </div>
         <div className="mt-3 space-y-2">
           <Skeleton className="h-12 w-full" />
@@ -119,7 +121,7 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Rehabilitation goals</h3>
+          <h3 className="text-sm font-semibold">{tu('rehabGoals')}</h3>
         </div>
         <span className="text-[10px] text-muted-foreground">
           {goals.filter((g) => g.achieved).length}/{goals.length} achieved
@@ -183,7 +185,7 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
                       'h-full rounded-full',
                       g.achieved
                         ? 'bg-gradient-to-r from-emerald-400 to-primary'
-                        : 'bg-gradient-to-r from-primary to-emerald-500',
+                        : 'bg-primary',
                     )}
                     initial={{ width: 0 }}
                     animate={{ width: `${pct}%` }}
@@ -212,6 +214,7 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
  * metric values relevant to this goal's type, with a dashed target line.
  */
 function GoalSparkline({ goal, sessions }: { goal: Goal; sessions: SessionSample[] }) {
+  const tu = useTranslations('ui')
   const values = React.useMemo(() => {
     return sessions.map((s) => {
       if (goal.type === 'rom_target') return s.maxAchievedAngle
@@ -270,7 +273,7 @@ function GoalSparkline({ goal, sessions }: { goal: Goal; sessions: SessionSample
         )}
       </svg>
       <span className="text-[9px] text-muted-foreground">
-        {values.length} sessions · last: {values[values.length - 1].toFixed(0)}
+        {tu('goalSpark', { n: values.length, last: values[values.length - 1].toFixed(0) })}
         {goal.type === 'rom_target' ? '°' : goal.type === 'accuracy' ? '%' : ''}
       </span>
     </div>

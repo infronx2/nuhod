@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Dumbbell, Loader2 } from 'lucide-react'
 import {
   Select,
@@ -34,6 +35,7 @@ interface ExercisePickerProps {
  * keeps the manual slider behavior.
  */
 export function ExercisePicker({ value, onChange, className }: ExercisePickerProps) {
+  const tu = useTranslations('ui')
   const [presets, setPresets] = React.useState<V2ExercisePreset[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -86,7 +88,7 @@ export function ExercisePicker({ value, onChange, className }: ExercisePickerPro
       <div className="flex items-center justify-between text-xs">
         <label htmlFor="exercise-select" className="flex items-center gap-1.5 font-medium text-muted-foreground">
           <Dumbbell className="h-3.5 w-3.5" />
-          Exercise preset
+          {tu('exPreset')}
         </label>
         {value.difficulty && (
           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -99,7 +101,7 @@ export function ExercisePicker({ value, onChange, className }: ExercisePickerPro
           <SelectValue placeholder={loading ? 'Loading…' : 'Select exercise'} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="custom">Custom (manual slider)</SelectItem>
+          <SelectItem value="custom">{tu('customSlider')}</SelectItem>
           {presets.map((p) => (
             <SelectItem key={p.slug} value={p.slug}>
               <span className="flex items-center gap-2">

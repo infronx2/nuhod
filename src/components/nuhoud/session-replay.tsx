@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import {
   LineChart,
@@ -46,6 +47,7 @@ export function SessionReplay({
   maxAngle,
   durationSeconds,
 }: SessionReplayProps) {
+  const tu = useTranslations('ui')
   const samples = React.useMemo<number[]>(() => {
     if (!angleTimelineJson) return []
     try {
@@ -109,10 +111,10 @@ export function SessionReplay({
       <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
         <Activity className="h-8 w-8 text-muted-foreground/40" />
         <p className="text-sm text-muted-foreground">
-          No angle timeline recorded for this session.
+          {tu('noAngleTimeline')}
         </p>
         <p className="text-xs text-muted-foreground/70">
-          Newer sessions store per-frame angles for playback.
+          {tu('angleTimelineHint')}
         </p>
       </div>
     )
@@ -265,6 +267,7 @@ export function SessionReplay({
  * SessionReplaySkeleton — loading state.
  */
 export function SessionReplaySkeleton() {
+  const tu = useTranslations('ui')
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-between">

@@ -42,16 +42,13 @@ export function UserMenu() {
           </span>
           <span
             className={cn(
-              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-              isDoctor
-                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                : 'bg-primary/15 text-primary dark:text-primary',
+              'hidden items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground sm:inline-flex',
             )}
           >
             <RoleIcon className="h-2.5 w-2.5" />
-            {isDoctor ? tc('doctor') ?? 'Doctor' : tc('patient') ?? 'Patient'}
+            {isDoctor ? tc('doctor') : tc('patient')}
           </span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
         </motion.button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

@@ -63,7 +63,7 @@ export async function notifyBadgesEarned(userId: string, slugs: string[]): Promi
     await createNotification({
       userId,
       type: 'badge_earned',
-      title: `Badge earned: ${def.name}`,
+      title: `وسام جديد: ${def.nameAr}`,
       body: def.description,
       severity: def.tier === 'gold' ? 'celebration' : 'success',
       linkType: 'badge',
@@ -83,8 +83,8 @@ export async function notifyPlanPrescribed(
   await createNotification({
     userId: patientId,
     type: 'plan_prescribed',
-    title: 'New treatment plan prescribed',
-    body: `"${planTitle}" — target ${targetAngle}°. Check your dashboard for details.`,
+    title: 'خطة علاجية جديدة',
+    body: `«${planTitle}»، الزاوية المستهدفة ${targetAngle}°.`,
     severity: 'info',
     linkType: 'plan',
   })

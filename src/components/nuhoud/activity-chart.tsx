@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import {
   BarChart,
   Bar,
@@ -23,14 +24,15 @@ function formatDay(iso: string): string {
   try {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleDateString('en-GB', { weekday: 'short' })
+    return d.toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { weekday: 'short' })
   } catch {
     return iso
   }
 }
 
 function formatDayShort(iso: string): string {
-  return formatDay(iso).slice(0, 3)
+  // Arabic day names don't shorten to three letters ("الث" is no day): drop the article instead.
+  return document.documentElement.lang === 'ar' ? formatDay(iso).replace(/^ال/, '') : formatDay(iso).slice(0, 3)
 }
 
 /**
@@ -38,6 +40,7 @@ function formatDayShort(iso: string): string {
  * Teal bars with a hover tooltip and responsive sizing.
  */
 export function ActivityChart({ data, loading }: ActivityChartProps) {
+  const tu = useTranslations('ui')
   const chartData = React.useMemo(
     () =>
       (data ?? []).map((d) => ({
@@ -55,15 +58,15 @@ export function ActivityChart({ data, loading }: ActivityChartProps) {
     <div className="flex h-64 w-full flex-col">
       <div className="mb-2 flex items-baseline justify-between">
         <div>
-          <h3 className="text-sm font-semibold">7-day activity</h3>
+          <h3 className="text-sm font-semibold">{tu('act7')}</h3>
           <p className="text-[11px] text-muted-foreground">
-            Reps per day, last 7 days
+            {tu('act7Desc')}
           </p>
         </div>
         <div className="text-right">
           <div className="font-mono text-xl font-bold text-primary">{total}</div>
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            total reps
+            {tu('totalReps')}
           </div>
         </div>
       </div>
@@ -72,7 +75,7 @@ export function ActivityChart({ data, loading }: ActivityChartProps) {
       ) : chartData.length === 0 ? (
         <div className="flex h-48 flex-col items-center justify-center gap-2 text-muted-foreground">
           <Activity className="h-8 w-8 opacity-40" />
-          <p className="text-xs">No activity recorded yet.</p>
+          <p className="text-xs">{tu('noActivity')}</p>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height="80%">
@@ -114,7 +117,7 @@ export function ActivityChart({ data, loading }: ActivityChartProps) {
                 const d = new Date(iso)
                 return Number.isNaN(d.getTime())
                   ? iso
-                  : d.toLocaleDateString('en-GB', {
+                  : d.toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), {
                       weekday: 'long',
                       day: 'numeric',
                       month: 'short',
@@ -134,7 +137,7 @@ export function ActivityChart({ data, loading }: ActivityChartProps) {
         </ResponsiveContainer>
       )}
       <div className="mt-1 text-[10px] text-muted-foreground">
-        max: <span className="font-mono font-semibold">{maxReps}</span> reps/day
+        {tu('maxPerDay', { n: maxReps })}
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { TrendingUp, TrendingDown, Sparkles, Target, Activity } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -22,6 +23,7 @@ interface WeeklyInsightsData {
  * session, and a deterministic clinical recommendation.
  */
 export function WeeklyInsights() {
+  const tu = useTranslations('ui')
   const [data, setData] = React.useState<WeeklyInsightsData | null>(null)
   const [loading, setLoading] = React.useState(true)
 
@@ -55,7 +57,7 @@ export function WeeklyInsights() {
     <Card className="nm-glass border-border/40 p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">Weekly insights</h3>
+        <h3 className="text-sm font-semibold">{tu('weeklyInsights')}</h3>
         <span className="ml-auto text-[10px] text-muted-foreground">last 7 days</span>
       </div>
 
@@ -63,20 +65,20 @@ export function WeeklyInsights() {
       <div className="mt-3 grid grid-cols-3 gap-2">
         <StatTile
           icon={Activity}
-          label="Sessions"
+          label={tu('sessions')}
           value={String(tw.sessions)}
           accent="primary"
         />
         <StatTile
           icon={TrendingUp}
-          label="Reps"
+          label={tu('reps')}
           value={String(tw.reps)}
           delta={deltas.reps}
           accent="accent"
         />
         <StatTile
           icon={Target}
-          label="Accuracy"
+          label={tu('accuracy')}
           value={`${tw.accuracy.toFixed(0)}%`}
           delta={deltas.accuracy}
           accent="secondary"
@@ -87,7 +89,7 @@ export function WeeklyInsights() {
         <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-card/40 p-2">
           <Target className="h-3.5 w-3.5 text-primary" />
           <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground">Best ROM this week</span>
+            <span className="text-[10px] text-muted-foreground">{tu('bestRomWeek')}</span>
             <span className="font-mono font-bold text-foreground">
               {tw.maxAngle.toFixed(0)}°
             </span>

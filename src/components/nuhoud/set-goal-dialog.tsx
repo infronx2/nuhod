@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { Target, Loader2, Plus } from 'lucide-react'
 import {
@@ -47,6 +48,7 @@ const GOAL_TYPES = [
  * On submit, POSTs to /api/v2/goals and toasts the result.
  */
 export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCreated }: SetGoalDialogProps) {
+  const tu = useTranslations('ui')
   const [type, setType] = React.useState('rom_target')
   const [targetValue, setTargetValue] = React.useState(120)
   const [title, setTitle] = React.useState('')
@@ -75,7 +77,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
           targetValue,
         }),
       })
-      toast.success('Goal created', {
+      toast.success(tu('goalCreated'), {
         description: `"${finalTitle}" for ${patientName ?? 'patient'}.`,
       })
       onOpenChange(false)
@@ -83,7 +85,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
       onCreated?.()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'failed'
-      toast.error('Could not create goal', { description: msg })
+      toast.error(tu('goalCreateFailed'), { description: msg })
     } finally {
       setSaving(false)
     }
@@ -95,7 +97,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-5 w-5 text-primary" />
-            Set a rehabilitation goal
+            {tu('setGoalTitle')}
           </DialogTitle>
           <DialogDescription>
             Create a milestone goal for {patientName ?? 'this patient'}. They'll see it on their dashboard with a progress tracker.
@@ -105,7 +107,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
         <div className="space-y-4 py-2">
           {/* Goal type */}
           <div className="space-y-1.5">
-            <Label htmlFor="goal-type" className="text-xs font-medium">Goal type</Label>
+            <Label htmlFor="goal-type" className="text-xs font-medium">{tu('goalType')}</Label>
             <Select value={type ?? ''} onValueChange={handleTypeChange}>
               <SelectTrigger id="goal-type" className="w-full">
                 <SelectValue />
@@ -124,7 +126,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
           {/* Target value */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium">Target value</Label>
+              <Label className="text-xs font-medium">{tu('targetValue')}</Label>
               <span className="font-mono text-sm font-bold text-primary">
                 {targetValue}{typeMeta.unit}
               </span>
@@ -145,7 +147,7 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
 
           {/* Title (optional) */}
           <div className="space-y-1.5">
-            <Label htmlFor="goal-title" className="text-xs font-medium">Title (optional)</Label>
+            <Label htmlFor="goal-title" className="text-xs font-medium">{tu('titleOptional')}</Label>
             <Input
               id="goal-title"
               value={title}
@@ -158,16 +160,16 @@ export function SetGoalDialog({ patientId, patientName, open, onOpenChange, onCr
 
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {tu('cancel')}
           </Button>
           <Button
             size="sm"
-            className="gap-1.5 bg-gradient-to-r from-primary to-emerald-600 text-white hover:from-primary hover:to-emerald-700"
+            className="gap-1.5 bg-primary text-white hover:bg-primary/90"
             onClick={handleSubmit}
             disabled={saving}
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            Create goal
+            {tu('createGoal')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bell,
@@ -55,6 +56,7 @@ const SEVERITY_COLOR: Record<string, string> = {
  * mark-all-read (button).
  */
 export function NotificationBell() {
+  const tu = useTranslations('ui')
   const { user } = useAuth()
   const [open, setOpen] = React.useState(false)
   const [notifications, setNotifications] = React.useState<Notification[]>([])
@@ -137,7 +139,7 @@ export function NotificationBell() {
         )
         setUnread((u) => Math.max(0, u - 1))
       } catch {
-        toast.error('Could not mark notification as read')
+        toast.error(tu('markReadFailed'))
       }
     },
     [],
@@ -155,7 +157,7 @@ export function NotificationBell() {
         toast.success(`${res.updated} notifications marked as read`)
       }
     } catch {
-      toast.error('Could not mark all as read')
+      toast.error(tu('markAllFailed'))
     }
   }, [])
 
@@ -195,10 +197,10 @@ export function NotificationBell() {
               className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-border/60 bg-card/95 shadow-2xl shadow-black/40 backdrop-blur-xl sm:w-96"
             >
               {/* Header */}
-              <div className="flex items-center justify-between border-b border-border/40 bg-gradient-to-r from-primary/10 to-emerald-500/10 px-4 py-2.5">
+              <div className="flex items-center justify-between border-b border-border/40 bg-muted/40 px-4 py-2.5">
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-semibold">Notifications</span>
+                  <span className="text-sm font-semibold">{tu('notifications')}</span>
                   {unread > 0 && (
                     <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-medium text-rose-500">
                       {unread} new
@@ -220,7 +222,7 @@ export function NotificationBell() {
                     className="flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary"
                   >
                     <CheckCheck className="h-3 w-3" />
-                    Mark all read
+                    {tu('markAllRead')}
                   </button>
                 )}
               </div>
@@ -232,9 +234,9 @@ export function NotificationBell() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/40">
                       <Bell className="h-5 w-5 text-muted-foreground/50" />
                     </div>
-                    <p className="text-sm text-muted-foreground">No notifications yet</p>
+                    <p className="text-sm text-muted-foreground">{tu('noNotifications')}</p>
                     <p className="text-xs text-muted-foreground/60">
-                      Badge earns, new plans and session saves will show here.
+                      {tu('notifHint')}
                     </p>
                   </div>
                 ) : (
@@ -291,14 +293,12 @@ export function NotificationBell() {
 
 function timeAgo(iso: string): string {
   const d = new Date(iso)
-  const diff = Date.now() - d.getTime()
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return 'just now'
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 7) return `${day}d ago`
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  const sec = Math.round((d.getTime() - Date.now()) / 1000)
+  const rtf = new Intl.RelativeTimeFormat(document.documentElement.lang === 'ar' ? 'ar' : 'en', { numeric: 'auto' })
+  const abs = Math.abs(sec)
+  if (abs < 60) return rtf.format(0, 'second')
+  if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour')
+  if (abs < 604800) return rtf.format(Math.round(sec / 86400), 'day')
+  return d.toLocaleDateString(document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB', { day: '2-digit', month: 'short' })
 }

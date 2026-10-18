@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useLocale, useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { Search, Dumbbell, Activity, Flame, ChevronRight, Stethoscope } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -25,9 +26,9 @@ interface ExercisePreset {
 }
 
 const DIFFICULTY_META: Record<string, { color: string; bg: string; icon: React.ComponentType<{ className?: string }> }> = {
-  beginner: { color: 'text-emerald-500', bg: 'bg-emerald-500/15 border-emerald-500/40', icon: Activity },
-  intermediate: { color: 'text-primary', bg: 'bg-primary/15 border-primary/40', icon: Flame },
-  advanced: { color: 'text-rose-500', bg: 'bg-rose-500/15 border-rose-500/40', icon: Dumbbell },
+  beginner: { color: 'text-accent-foreground', bg: 'bg-accent border-transparent', icon: Activity },
+  intermediate: { color: 'text-primary', bg: 'bg-primary/10 border-transparent', icon: Flame },
+  advanced: { color: 'text-[#B5541B] dark:text-[#F0B070]', bg: 'bg-[#E8A15C]/15 border-transparent', icon: Dumbbell },
 }
 
 const JOINT_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -43,6 +44,8 @@ const JOINT_ICON: Record<string, React.ComponentType<{ className?: string }>> = 
  * shortcut for doctors. Used as a dedicated section on the doctor dashboard.
  */
 export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: ExercisePreset) => void }) {
+  const tu = useTranslations('ui')
+  const ar = useLocale() === 'ar'
   const [presets, setPresets] = React.useState<ExercisePreset[]>([])
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState('')
@@ -78,9 +81,9 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
     <Card className="nm-glass border-border/40 p-4 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
         <Dumbbell className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">Exercise library</h3>
+        <h3 className="text-sm font-semibold">{tu('exLibrary')}</h3>
         <span className="ml-auto text-[10px] text-muted-foreground">
-          {filtered.length} of {presets.length} presets
+          {tu('presetCount', { n: filtered.length, total: presets.length })}
         </span>
       </div>
 
@@ -91,7 +94,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search exercises…"
+            placeholder={tu('searchEx')}
             className="h-8 w-full pl-8 text-xs"
             aria-label="Search exercises"
           />
@@ -112,7 +115,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                 )}
               >
                 <Icon className="h-2.5 w-2.5" />
-                {d}
+                {tu(`diff_${d}`)}
               </button>
             )
           })}
@@ -130,7 +133,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                   active ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border/40 text-muted-foreground hover:text-foreground',
                 )}
               >
-                {j}
+                {tu(`joint_${j}`)}
               </button>
             )
           })}
@@ -145,7 +148,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">No exercises match your filters.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{tu('noExMatch')}</p>
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p, i) => {
@@ -169,24 +172,21 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <JointIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{p.joint}</span>
+                    <span className="text-[11px] font-medium text-muted-foreground">{tu(`joint_${p.joint}`)}</span>
                   </div>
                   <Badge className={cn('gap-1 border px-1.5 py-0.5 text-[9px] font-medium', diffMeta.bg, diffMeta.color)} variant="outline">
                     <DiffIcon className="h-2.5 w-2.5" />
-                    {p.difficulty}
+                    {tu(`diff_${p.difficulty}`)}
                   </Badge>
                 </div>
 
                 {/* Name */}
                 <div>
-                  <p className="text-xs font-semibold text-foreground">{p.name}</p>
-                  {p.nameAr && (
-                    <p className="text-[10px] text-muted-foreground" dir="rtl">{p.nameAr}</p>
-                  )}
+                  <p className="text-sm font-semibold text-foreground">{ar && p.nameAr ? p.nameAr : p.name}</p>
                 </div>
 
-                {/* Description */}
-                <p className="text-[10px] leading-relaxed text-muted-foreground line-clamp-2">{p.description}</p>
+                {/* Description (English only: the presets have no Arabic description) */}
+                {!ar && <p className="text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{p.description}</p>}
 
                 {/* Target angle viz */}
                 <div className="mt-auto flex items-center justify-between gap-2 pt-1">
@@ -199,7 +199,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                           cy="16"
                           r="13"
                           fill="none"
-                          stroke="#0B5394"
+                          stroke="var(--primary)"
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeDasharray={`${(p.targetAngle / 180) * 81.68} 81.68`}
@@ -210,7 +210,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                         {p.targetAngle}°
                       </span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground">{p.sessionsPerWeek}/week</span>
+                    <span className="text-[10px] text-muted-foreground">{tu('perWeek', { n: p.sessionsPerWeek })}</span>
                   </div>
 
                   {/* Prescribe shortcut (for doctors) */}
@@ -222,7 +222,7 @@ export function ExerciseLibrary({ onPrescribe }: { onPrescribe?: (preset: Exerci
                       onClick={() => onPrescribe(p)}
                     >
                       <Stethoscope className="h-2.5 w-2.5" />
-                      Prescribe
+                      {tu('prescribe')}
                       <ChevronRight className="h-2.5 w-2.5" />
                     </Button>
                   )}

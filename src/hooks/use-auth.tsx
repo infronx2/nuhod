@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { apiFetch, getToken, setToken } from '@/lib/api'
+import { ApiError, apiFetch, getToken, setToken } from '@/lib/api'
 import type { V2User } from '@/lib/v2-types'
 
 /**
@@ -44,22 +44,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       return
     }
-    try {
-      const data = await apiFetch<{ ok: boolean; user: V2User }>(
-        '/api/v2/auth/me',
-      )
-      if (data.ok && data.user) {
-        setUser(data.user)
-      } else {
-        setUser(null)
-        setToken(null)
+    // Only the server saying the token is invalid (401, which apiFetch clears) signs the user out.
+    // A network error or a slow cold start is retried, and the token is kept for the next visit.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const data = await apiFetch<{ ok: boolean; user: V2User }>('/api/v2/auth/me')
+        if (data.ok && data.user) {
+          setUser(data.user)
+        } else {
+          setUser(null)
+          setToken(null)
+        }
+        break
+      } catch (err) {
+        if ((err instanceof ApiError && err.status === 401) || attempt === 2) {
+          setUser(null)
+          break
+        }
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
       }
-    } catch {
-      setUser(null)
-      setToken(null)
-    } finally {
-      setLoading(false)
     }
+    setLoading(false)
   }, [])
 
   // Validate the persisted token once on mount.

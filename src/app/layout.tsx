@@ -1,34 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Cairo, Tajawal } from "next/font/google";
+import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import "./globals.css";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/nuhoud/theme-provider";
+import { DepthLayer } from "@/components/nuhoud/depth-layer";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-// Cairo — خط عربي حديث مصمم للواجهات الرقمية. أنيق وواضح.
-const cairo = Cairo({
-  variable: "--font-cairo",
+// IBM Plex Sans Arabic: a calm, clinical Arabic face with Latin to match; Inter for English-only runs.
+const plexArabic = IBM_Plex_Sans_Arabic({
+  variable: "--font-plex-arabic",
   subsets: ["arabic", "latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 
-// Tajawal — خط عربي احتياطي للأرقام والنصوص المختصرة.
-const tajawal = Tajawal({
-  variable: "--font-tajawal",
-  subsets: ["arabic", "latin"],
-  weight: ["400", "500", "700"],
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
   display: "swap",
 });
 
@@ -70,16 +59,17 @@ export default async function RootLayout({
   return (
     <html lang={locale} dir={isRTL ? 'rtl' : 'ltr'} suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} ${tajawal.variable} font-cairo antialiased bg-background text-foreground`}
+        className={`${plexArabic.variable} ${inter.variable} antialiased bg-background text-foreground`}
       >
         <NextIntlClientProvider locale={locale} messages={messages}>
           <ThemeProvider
             attribute="class"
-            defaultTheme="dark"
+            defaultTheme="light"
             enableSystem
             disableTransitionOnChange
           >
             {children}
+            <DepthLayer />
             <SonnerToaster position={isRTL ? 'top-left' : 'top-right'} richColors closeButton dir={isRTL ? 'rtl' : 'ltr'} />
           </ThemeProvider>
         </NextIntlClientProvider>

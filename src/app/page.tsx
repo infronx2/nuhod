@@ -12,31 +12,6 @@ import { useAuth, AuthProvider } from '@/hooks/use-auth'
 import { useTranslations, useLocale } from 'next-intl'
 
 /**
- * SectionLabel — small uppercase muted label used as a divider between
- * major sections (per the styling polish spec: "01 · System Architecture",
- * "02 · Live Tracking").
- */
-function SectionLabel({
-  index,
-  children,
-}: {
-  index: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="font-mono text-[10px] font-semibold tracking-widest text-primary uppercase">
-        {index}
-      </span>
-      <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-        {children}
-      </span>
-      <div className="h-px flex-1 bg-gradient-to-r from-border/60 to-transparent" />
-    </div>
-  )
-}
-
-/**
  * PatientDashboard — the patient's view: a single page built around starting today's majlis
  * session (see PatientHome), with the AI coach one tap away.
  */
@@ -70,10 +45,9 @@ function DoctorView() {
 
   return (
     <div className="nm-mesh-bg flex min-h-screen flex-col bg-background">
-      <Header
-      />
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <SectionLabel index={isRTL ? '٠١' : '01'}>{t('doctorDashboard')}</SectionLabel>
+      <Header />
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-semibold text-foreground">{t('doctorDashboard')}</h1>
         {user && <DoctorDashboard doctorId={user.id} />}
       </main>
       <AgentChat variant="compact" />
@@ -90,7 +64,7 @@ function LoadingGate() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      <p className="text-sm text-muted-foreground">Loading Nuhoud…</p>
+      <p className="text-sm text-muted-foreground">نُهوض…</p>
     </div>
   )
 }

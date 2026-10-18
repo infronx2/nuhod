@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { BarChart3, Target, Gauge } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -36,6 +37,7 @@ interface DoctorAnalyticsProps {
  * training enough?".
  */
 export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
+  const tu = useTranslations('ui')
   const [buckets, setBuckets] = React.useState<Bucket[]>([])
   const [adherence, setAdherence] = React.useState<Adherence | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -83,7 +85,7 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
       <div className="flex flex-col gap-3 rounded-xl border border-border/40 bg-card/60 p-4 backdrop-blur">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Accuracy distribution</h3>
+          <h3 className="text-sm font-semibold">{tu('accDist')}</h3>
         </div>
         {loading ? (
           <div className="flex h-40 items-end gap-2">
@@ -117,7 +119,7 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
           </div>
         )}
         <p className="text-[10px] text-muted-foreground/70">
-          Sessions grouped by accuracy bracket · higher bars on the right = better form.
+          {tu('accDistDesc')}
         </p>
       </div>
 
@@ -125,7 +127,7 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
       <div className="flex flex-col gap-3 rounded-xl border border-border/40 bg-card/60 p-4 backdrop-blur">
         <div className="flex items-center gap-2">
           <Gauge className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Plan adherence</h3>
+          <h3 className="text-sm font-semibold">{tu('adherence')}</h3>
         </div>
         {loading || !adherence ? (
           <div className="flex h-40 items-center justify-center">
@@ -166,7 +168,7 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
                 >
                   {adherencePct}%
                 </span>
-                <span className="text-[9px] text-muted-foreground">on target</span>
+                <span className="text-[10px] text-muted-foreground">{tu('onTarget')}</span>
               </div>
             </div>
 
@@ -174,7 +176,7 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5">
                 <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">This week</span>
+                <span className="text-xs text-muted-foreground">{tu('thisWeek')}</span>
                 <span className="ml-auto font-mono text-sm font-semibold">
                   {adherence.sessionsThisWeek}
                   <span className="text-muted-foreground"> / {adherence.targetPerWeek}</span>
@@ -182,10 +184,10 @@ export function DoctorAnalytics({ patientId }: DoctorAnalyticsProps) {
               </div>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 {adherencePct >= 80
-                  ? 'Excellent adherence — patients are hitting their weekly targets.'
+                  ? tu('adhHigh')
                   : adherencePct >= 50
-                    ? 'Moderate adherence — consider follow-up with patients under 50%.'
-                    : 'Low adherence — patients need encouragement to meet weekly goals.'}
+                    ? tu('adhMid')
+                    : tu('adhLow')}
               </p>
             </div>
           </div>

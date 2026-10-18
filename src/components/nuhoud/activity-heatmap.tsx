@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { motion } from 'framer-motion'
 import { Activity } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,8 +23,9 @@ interface HeatmapProps {
   title?: string
 }
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// Day and month names in the page language (2026-01-04 was a Sunday).
+const dayNames = () => Array.from({ length: 7 }, (_, i) => new Date(2026, 0, 4 + i).toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { weekday: 'short' }))
+const monthNames = () => Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { month: 'short' }))
 
 /**
  * ActivityHeatmap — a GitHub-style calendar heatmap showing reps per day
@@ -37,6 +39,7 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
  *   max      → primary (solid)
  */
 export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatmap' }: HeatmapProps) {
+  const tu = useTranslations('ui')
   const [cells, setCells] = React.useState<HeatmapCell[]>([])
   const [maxReps, setMaxReps] = React.useState(0)
   const [loading, setLoading] = React.useState(true)
@@ -86,7 +89,9 @@ export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatm
     if (col.length === 0) return
     const month = new Date(col[0].date).getMonth()
     if (month !== lastMonth) {
-      monthLabels.push({ col: colIdx, label: MONTH_LABELS[month] })
+      // Arabic month names are long: skip a label that would run into the previous one.
+      const prev = monthLabels[monthLabels.length - 1]
+      if (!prev || colIdx - prev.col >= 4) monthLabels.push({ col: colIdx, label: monthNames()[month] })
       lastMonth = month
     }
   })
@@ -139,7 +144,7 @@ export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatm
             <div className="flex gap-1">
               {/* Day labels column */}
               <div className="flex flex-col gap-1 pr-1">
-                {DAY_LABELS.map((d, i) => (
+                {dayNames().map((d, i) => (
                   <div
                     key={d}
                     className="flex h-3 items-center text-[9px] leading-none text-muted-foreground/70"
@@ -180,7 +185,7 @@ export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatm
 
           {/* Legend */}
           <div className="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
-            <span>Less</span>
+            <span>{tu('less')}</span>
             <div className="flex gap-0.5">
               <div className="h-2.5 w-2.5 rounded-sm bg-muted/40" />
               <div className="h-2.5 w-2.5 rounded-sm bg-primary/30" />
@@ -188,7 +193,7 @@ export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatm
               <div className="h-2.5 w-2.5 rounded-sm bg-primary/75" />
               <div className="h-2.5 w-2.5 rounded-sm bg-primary" />
             </div>
-            <span>More</span>
+            <span>{tu('more')}</span>
           </div>
         </div>
       )}

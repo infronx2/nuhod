@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { toast } from 'sonner'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   ArrowLeft,
   Mail,
@@ -31,7 +31,6 @@ import {
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 import { AgentChat } from '@/components/nuhoud/agent-chat'
-import { FhirBundleButton } from '@/components/nuhoud/fhir-bundle-button'
 import { SetGoalDialog } from '@/components/nuhoud/set-goal-dialog'
 import { GoalsTracker } from '@/components/nuhoud/goals-tracker'
 import type {
@@ -48,7 +47,6 @@ import { ActivityHeatmap } from '@/components/nuhoud/activity-heatmap'
 import { CompTrendChart } from '@/components/nuhoud/comp-trend-chart'
 import { LimbBreakdown } from '@/components/nuhoud/limb-breakdown'
 import { ProgressTimeline } from '@/components/nuhoud/progress-timeline'
-import { FhirViewer } from '@/components/nuhoud/fhir-viewer'
 
 interface PatientDetailProps {
   patientId: string
@@ -57,11 +55,11 @@ interface PatientDetailProps {
   onPlanCreated?: () => void
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   try {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleString('en-GB', {
+    return d.toLocaleString(locale === 'ar' ? 'ar-OM' : 'en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -73,14 +71,14 @@ function formatDate(iso: string): string {
   }
 }
 
-function ageFrom(dob: string | null | undefined): string {
+function ageFrom(dob: string | null | undefined, fmt: (n: number) => string): string {
   if (!dob) return '—'
   try {
     const d = new Date(dob)
     if (Number.isNaN(d.getTime())) return '—'
     const diff = Date.now() - d.getTime()
     const years = Math.floor(diff / (365.25 * 24 * 3600 * 1000))
-    return years > 0 ? `${years} yrs` : '—'
+    return years > 0 ? fmt(years) : '—'
   } catch {
     return '—'
   }
@@ -105,14 +103,16 @@ function ageFrom(dob: string | null | undefined): string {
 export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetailProps) {
   const tr = useTranslations('roster')
   const td = useTranslations('doctor')
+  const t = useTranslations('pd')
+  const locale = useLocale()
+  const sourceLabel = (src: string) => (src === 'ue5-vr' ? t('srcVr') : src.startsWith('ue') ? t('srcGame') : src === 'live' ? t('srcLive') : src)
+  const limbLabel = (l: string) => (l === 'left' ? t('limbLeft') : l === 'bilateral' ? t('limbBoth') : t('limbRight'))
   const [detail, setDetail] = React.useState<V2PatientDetail | null>(null)
   const [stats, setStats] = React.useState<V2Stats | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [statsLoading, setStatsLoading] = React.useState(true)
   const [planDialogOpen, setPlanDialogOpen] = React.useState(false)
   const [goalDialogOpen, setGoalDialogOpen] = React.useState(false)
-  const [fhirSessionId, setFhirSessionId] = React.useState<string | null>(null)
-  const [fhirOpen, setFhirOpen] = React.useState(false)
   const [coachOpen, setCoachOpen] = React.useState(false)
 
   const fetchDetail = React.useCallback(async () => {
@@ -121,8 +121,7 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
       const data = await apiFetch<V2PatientDetail>(`/api/v2/patients/${patientId}`)
       setDetail(data)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load patient'
-      toast.error('Patient load failed', { description: msg })
+      toast.error(t('loadFailed'), { description: err instanceof Error ? err.message : undefined })
     } finally {
       setLoading(false)
     }
@@ -147,11 +146,6 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
     void fetchStats()
   }, [fetchDetail, fetchStats])
 
-  const handleViewFhir = (sessionId: string) => {
-    setFhirSessionId(sessionId)
-    setFhirOpen(true)
-  }
-
   return (
     <div className="flex flex-col gap-4">
       {/* ---------- Header ---------- */}
@@ -163,7 +157,7 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
           onClick={onBack}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to roster
+          {t('back')}
         </Button>
         {loading ? (
           <div className="flex flex-1 items-center gap-3">
@@ -198,10 +192,10 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                 >
                   <Hand className="h-3 w-3" />
                   {detail.patient.affectedSide === 'left'
-                    ? 'Left side affected'
+                    ? t('leftSide')
                     : detail.patient.affectedSide === 'bilateral'
-                      ? 'Bilateral'
-                      : 'Right side affected'}
+                      ? t('bilateral')
+                      : t('rightSide')}
                 </Badge>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -211,11 +205,11 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <Cake className="h-3 w-3" />
-                  {ageFrom(detail.patient.dateOfBirth)}
+                  {ageFrom(detail.patient.dateOfBirth, (n) => t('years', { n }))}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <CalendarDays className="h-3 w-3" />
-                  {new Date(detail.patient.createdAt!).toLocaleDateString('en-GB', {
+                  {new Date(detail.patient.createdAt!).toLocaleDateString(locale === 'ar' ? 'ar-OM' : 'en-GB', {
                     day: '2-digit',
                     month: 'short',
                     year: 'numeric',
@@ -235,9 +229,8 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
           }}
         >
           <RotateCw className="h-3.5 w-3.5" />
-          Refresh
+          {t('refresh')}
         </Button>
-        <FhirBundleButton patientId={patientId} patientName={detail?.patient.name} days={30} />
         <Button
           size="sm"
           variant="outline"
@@ -245,15 +238,15 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
           onClick={() => setGoalDialogOpen(true)}
         >
           <Target className="h-3.5 w-3.5" />
-          Set goal
+          {t('setGoal')}
         </Button>
         <Button
           size="sm"
           className={cn(
             'h-9 gap-1.5',
             coachOpen
-              ? 'bg-rose-500 text-rose-50 hover:bg-rose-600'
-              : 'bg-gradient-to-r from-primary to-emerald-600 text-white hover:from-primary hover:to-emerald-700',
+              ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+              : 'bg-primary text-primary-foreground hover:bg-primary/90',
           )}
           onClick={() => setCoachOpen((v) => !v)}
           aria-pressed={coachOpen}
@@ -285,26 +278,26 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
               <div className="flex items-center gap-2">
                 <Stethoscope className="h-4 w-4 text-primary" />
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-primary dark:text-primary">
-                  Active treatment plan
+                  {t('activePlan')}
                 </span>
               </div>
               {detail?.activePlan ? (
                 <>
                   <h3 className="text-base font-bold">
-                    {detail.activePlan.title}
+                    {detail.activePlan.title === 'Upper-limb rehab plan' ? t('defaultPlanTitle') : detail.activePlan.title}
                   </h3>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <Badge variant="outline" className="gap-1 border-border/60 px-2 py-0.5 font-normal">
-                      Target: <span className="font-mono font-semibold">{detail.activePlan.targetAngle}°</span>
+                      {t('target')}: <span className="font-mono font-semibold">{detail.activePlan.targetAngle}°</span>
                     </Badge>
                     <Badge variant="outline" className="gap-1 border-border/60 px-2 py-0.5 font-normal">
-                      Sessions/wk: <span className="font-mono font-semibold">{detail.activePlan.sessionsPerWeek}</span>
+                      {t('sessionsWk')}: <span className="font-mono font-semibold">{detail.activePlan.sessionsPerWeek}</span>
                     </Badge>
                     <Badge variant="outline" className="gap-1 border-border/60 px-2 py-0.5 font-normal">
-                      Daily goal: <span className="font-mono font-semibold">{detail.activePlan.dailyRepGoal}</span>
+                      {t('dailyGoal')}: <span className="font-mono font-semibold">{detail.activePlan.dailyRepGoal}</span>
                     </Badge>
                     <Badge variant="outline" className="gap-1 border-border/60 px-2 py-0.5 font-normal capitalize">
-                      {detail.activePlan.targetLimb.replace('_', ' ')}
+                      {limbLabel(detail.activePlan.targetLimb.replace('upper_', ''))}
                     </Badge>
                   </div>
                   {detail.activePlan.notes && (
@@ -315,7 +308,7 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No active plan prescribed yet.
+                  {t('noPlan')}
                 </p>
               )}
             </div>
@@ -333,11 +326,11 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
 
       {/* ---------- KPI row ---------- */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiTile label="Total sessions" value={detail?.aggregate.totalSessions ?? 0} accent="text-sky-400" loading={loading} />
-        <KpiTile label="Total reps" value={detail?.aggregate.totalReps ?? 0} accent="text-primary" loading={loading} />
-        <KpiTile label="Max ROM" value={detail?.aggregate.maxAngleOverall ?? 0} suffix="°" accent="text-primary" loading={loading} />
+        <KpiTile label={t('totalSessions')} value={detail?.aggregate.totalSessions ?? 0} accent="text-sky-400" loading={loading} />
+        <KpiTile label={t('totalReps')} value={detail?.aggregate.totalReps ?? 0} accent="text-primary" loading={loading} />
+        <KpiTile label={t('maxRom')} value={detail?.aggregate.maxAngleOverall ?? 0} suffix="°" accent="text-primary" loading={loading} />
         <KpiTile
-          label="Accuracy"
+          label={t('accuracy')}
           value={detail?.aggregate.accuracyPct ?? 0}
           suffix="%"
           accent="text-emerald-500"
@@ -353,9 +346,9 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
         <Card className="border-border/40 bg-card/60 p-4 shadow-sm backdrop-blur">
           <div className="flex flex-col gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Accuracy</h3>
+              <h3 className="text-sm font-semibold">{t('accuracy')}</h3>
               <p className="text-[11px] text-muted-foreground">
-                Correct vs compensated reps (last 30 sessions)
+                {t('accuracyDesc')}
               </p>
             </div>
             {loading ? (
@@ -389,7 +382,7 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
         <ActivityHeatmap
           patientId={patientId}
           weeks={12}
-          title={`${detail?.patient.name ?? 'Patient'} · activity last 12 weeks`}
+          title={t('activity12w', { name: detail?.patient.name ?? '' })}
         />
       </Card>
 
@@ -418,9 +411,9 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
       <div className="grid grid-cols-1 gap-4">
         <Card className="border-border/40 bg-card/60 shadow-sm backdrop-blur">
           <div className="border-b border-border/60 p-3">
-            <h3 className="text-sm font-semibold">Recent sessions</h3>
+            <h3 className="text-sm font-semibold">{t('recentSessions')}</h3>
             <p className="text-[11px] text-muted-foreground">
-              Last 50 sessions · FHIR R4 export available per row
+              {t('last50')}
             </p>
           </div>
           <div className="nm-scroll-thin max-h-96 overflow-auto">
@@ -433,33 +426,32 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
             ) : !detail || detail.sessions.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
                 <CalendarDays className="h-8 w-8 opacity-40" />
-                <p className="text-xs">No sessions recorded yet.</p>
+                <p className="text-xs">{t('noSessions')}</p>
               </div>
             ) : (
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Source</TableHead>
-                    <TableHead className="text-xs">Limb</TableHead>
-                    <TableHead className="text-right text-xs">Reps</TableHead>
-                    <TableHead className="text-right text-xs">Correct</TableHead>
-                    <TableHead className="text-right text-xs">Max°</TableHead>
-                    <TableHead className="text-right text-xs">Grip</TableHead>
-                    <TableHead className="text-right text-xs">Pinch</TableHead>
-                    <TableHead className="text-right text-xs">Comp</TableHead>
-                    <TableHead className="text-right text-xs">Score</TableHead>
-                    <TableHead className="text-right text-xs">FHIR</TableHead>
+                    <TableHead className="text-xs">{t('date')}</TableHead>
+                    <TableHead className="text-xs">{t('source')}</TableHead>
+                    <TableHead className="text-xs">{t('limb')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('reps')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('correct')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('maxDeg')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('grip')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('pinch')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('comp')}</TableHead>
+                    <TableHead className="text-end text-xs">{t('score')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {detail.sessions.slice(0, 50).map((s) => (
                     <TableRow key={s.id} className="text-xs">
                       <TableCell className="whitespace-nowrap">
-                        {formatDate(s.sessionDate)}
+                        {formatDate(s.sessionDate, locale)}
                         {s.painStop && (
                           <Badge variant="destructive" className="ml-1.5 px-1 py-0 text-[9px]">
-                            Pain stop
+                            {t('painStop')}
                           </Badge>
                         )}
                       </TableCell>
@@ -473,32 +465,21 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                               : 'border-secondary/40 text-secondary dark:text-slate-300',
                           )}
                         >
-                          {s.source}
+                          {sourceLabel(s.source)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="capitalize">{s.limb}</TableCell>
-                      <TableCell className="text-right font-mono">{s.totalReps}</TableCell>
-                      <TableCell className="text-right font-mono text-emerald-500">{s.correctReps}</TableCell>
-                      <TableCell className="text-right font-mono">{s.maxAchievedAngle.toFixed(0)}°</TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell>{limbLabel(s.limb)}</TableCell>
+                      <TableCell className="text-end font-mono">{s.totalReps}</TableCell>
+                      <TableCell className="text-end font-mono text-emerald-500">{s.correctReps}</TableCell>
+                      <TableCell className="text-end font-mono">{s.maxAchievedAngle.toFixed(0)}°</TableCell>
+                      <TableCell className="text-end font-mono">
                         {s.gripClosureMax ? `${s.gripClosureMax.toFixed(0)}%` : '—'}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {s.pinchMinCm ? `${s.pinchMinCm.toFixed(1)} cm` : '—'}
+                      <TableCell className="text-end font-mono">
+                        {s.pinchMinCm ? t('cm', { n: s.pinchMinCm.toFixed(1) }) : '—'}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-rose-500">{s.compensationErrors}</TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-accent">{s.gamificationScore}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1 px-2 text-[10px]"
-                          onClick={() => handleViewFhir(s.id)}
-                        >
-                          <FileJson className="h-3 w-3" />
-                          View
-                        </Button>
-                      </TableCell>
+                      <TableCell className="text-end font-mono text-rose-500">{s.compensationErrors}</TableCell>
+                      <TableCell className="text-end font-mono font-semibold text-accent">{s.gamificationScore}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -508,11 +489,6 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
         </Card>
       </div>
 
-      <FhirViewer
-        sessionId={fhirSessionId}
-        open={fhirOpen}
-        onOpenChange={setFhirOpen}
-      />
 
       <PlanEditorDialog
         patient={detail ? { id: patientId, name: detail.patient.name, affectedSide: detail.patient.affectedSide } : null}
