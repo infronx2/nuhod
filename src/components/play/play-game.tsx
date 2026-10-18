@@ -26,6 +26,7 @@ export function PlayGame() {
   const { user, loading: authLoading } = useAuth()
   const [phase, setPhase] = React.useState<Phase>('intro')
   const [error, setError] = React.useState('')
+  const [errorDetail, setErrorDetail] = React.useState('')
   const [hud, setHud] = React.useState<HudState | null>(null)
   const [muted, setMuted] = React.useState(false)
   const [saved, setSaved] = React.useState<boolean | null>(null)
@@ -93,14 +94,23 @@ export function PlayGame() {
 
   const begin = async () => {
     setPhase('loading')
+    // Which step failed, so the message (and what the patient reports back) says where it stopped.
+    let step: 'camera' | 'video' | 'scene' | 'tracking' = 'camera'
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      })
+      // In-app browsers (WhatsApp, Instagram…) and plain http have no camera API at all.
+      if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no mediaDevices'), { name: 'NoCameraApi' })
+      const stream = await navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.name === 'NotAllowedError') throw e
+          // Some cameras refuse the size hints; any front camera will do.
+          return navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        })
+      step = 'video'
       const v = video.current!
       v.srcObject = stream
       await v.play()
+      step = 'scene'
       const { Game } = await import('./game')
       const g = new Game(stage.current!, v, plan, (s) => {
         // The HUD needs about ten updates a second, not sixty.
@@ -116,12 +126,26 @@ export function PlayGame() {
       }, () => void finish())
       g.voice.unlock()
       game.current = g
+      step = 'tracking'
       await g.load()
       g.startPreview()
       setPhase('position')
     } catch (err) {
       const name = err instanceof Error ? err.name : ''
-      setError(name === 'NotAllowedError' ? 'لازم تسمح باستخدام الكاميرا عشان نتابع حركة يدك.' : 'تعذّر تشغيل الكاميرا أو التتبع على هذا الجهاز.')
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[play] start failed at', step, err)
+      setError(
+        name === 'NotAllowedError'
+          ? 'لازم تسمح باستخدام الكاميرا عشان نتابع حركة يدك. من إعدادات Safari ← الكاميرا ← اسمح.'
+          : name === 'NoCameraApi'
+            ? 'المتصفح هذا ما يسمح بالكاميرا. افتح الرابط في Safari أو Chrome مباشرة (مو من داخل واتساب أو انستقرام).'
+            : name === 'NotReadableError'
+              ? 'الكاميرا مشغولة في تطبيق ثاني. سكّره وحاول مرة ثانية.'
+              : step === 'tracking'
+                ? 'تعذّر تحميل نظام التتبع. تأكد من الإنترنت وحاول مرة ثانية.'
+                : 'تعذّر تشغيل الكاميرا على هذا الجهاز.',
+      )
+      setErrorDetail(`${step} · ${name || 'Error'}: ${message}`.slice(0, 160))
       setPhase('error')
     }
   }
@@ -284,6 +308,7 @@ export function PlayGame() {
           <Panel>
             <p className="text-lg font-semibold">ما قدرنا نبدأ</p>
             <p className="mt-2 text-sm leading-relaxed text-white/80">{error}</p>
+            {errorDetail && <p dir="ltr" className="mt-3 break-all rounded-lg bg-black/25 px-3 py-2 text-left font-mono text-[11px] text-white/50">{errorDetail}</p>}
             <Button className="mt-5 h-12 w-full" onClick={() => window.location.reload()}>حاول مرة ثانية</Button>
           </Panel>
         </FullScreen>

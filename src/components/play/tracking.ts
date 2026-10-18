@@ -114,14 +114,21 @@ export class Tracker {
   private handFilters: Record<Side, PointsFilter> = { right: new PointsFilter(1.5, 3.0), left: new PointsFilter(1.5, 3.0) }
   private handLastSeen: Record<Side, number> = { right: 0, left: 0 }
   private angleFilters = new Map<string, OneEuro>()
+  private lastMs = -1
   private segment: Record<Side, [number | null, number | null]> = { right: [null, null], left: [null, null] }
 
   static async create(base = '/play'): Promise<Tracker> {
     const t = new Tracker()
-    const files = await FilesetResolver.forVisionTasks(`${base}/wasm`)
+    // Our own copy first; the same version from the npm CDN if it is missing from this deployment.
+    const cdn = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm'
+    const ours = await fetch(`${base}/wasm/vision_wasm_internal.wasm`, { method: 'HEAD' }).then((r) => r.ok).catch(() => false)
+    const files = await FilesetResolver.forVisionTasks(ours ? `${base}/wasm` : cdn)
     // GPU where it works (iPhone, most Android); CPU otherwise.
     const make = async <T>(fn: (delegate: 'GPU' | 'CPU') => Promise<T>) => {
-      try { return await fn('GPU') } catch { return await fn('CPU') }
+      try { return await fn('GPU') } catch (e) {
+        console.warn('[play] GPU delegate failed, using CPU', e)
+        return await fn('CPU')
+      }
     }
     t.pose = await make((delegate) => PoseLandmarker.createFromOptions(files, {
       baseOptions: { modelAssetPath: `${base}/models/pose_landmarker_lite.task`, delegate },
@@ -147,8 +154,10 @@ export class Tracker {
     return next
   }
 
-  /** Tracks one video frame. timeMs must increase from frame to frame. */
-  process(video: HTMLVideoElement, timeMs: number): TrackFrame {
+  /** Tracks one video frame. Timestamps are forced to increase: MediaPipe's graph stops for good on one that goes back. */
+  process(video: HTMLVideoElement, frameMs: number): TrackFrame {
+    const timeMs = Math.max(Math.round(frameMs), this.lastMs + 1)
+    this.lastMs = timeMs
     const t = timeMs / 1000
     const out: TrackFrame = {
       body: false,

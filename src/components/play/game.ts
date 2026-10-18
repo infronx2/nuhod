@@ -112,7 +112,7 @@ export class Game {
   /** Tracking only (for the "can the camera see you" step), without the tasks. */
   startPreview() {
     this.running = false
-    this.loop(performance.now())
+    this.raf = requestAnimationFrame(this.loop)
   }
 
   start() {
