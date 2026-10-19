@@ -8,11 +8,17 @@
 import jwt, { type JwtPayload } from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 
-const DEV_SECRET =
-  process.env.NUHOUD_JWT_SECRET ||
-  'nuhoud-dev-secret-change-in-prod-7f3a9e1b'
+/** The signing secret. In production a missing secret refuses to sign rather than fall back to a public one. */
+function secret(): string {
+  const s = process.env.NUHOUD_JWT_SECRET
+  if (s) return s
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL) throw new Error('NUHOUD_JWT_SECRET is not set')
+  return 'nuhoud-dev-secret-change-in-prod-7f3a9e1b'
+}
 
-const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7 // 7 days
+// Patients stay signed in on their own phone for a week; staff, who open every record, for 12 hours.
+const PATIENT_TTL_SECONDS = 60 * 60 * 24 * 7
+const STAFF_TTL_SECONDS = 60 * 60 * 12
 
 export interface AuthUser {
   id: string
@@ -49,14 +55,16 @@ export function signToken(user: AuthUser): string {
       email: user.email,
       name: user.name,
     },
-    DEV_SECRET,
-    { expiresIn: TOKEN_TTL_SECONDS, algorithm: 'HS256' },
+    secret(),
+    { expiresIn: user.role.toUpperCase() === 'PATIENT' ? PATIENT_TTL_SECONDS : STAFF_TTL_SECONDS, algorithm: 'HS256' },
   )
 }
 
 export function verifyToken(token: string): NeuromoveJwtPayload | null {
   try {
-    const payload = jwt.verify(token, DEV_SECRET) as NeuromoveJwtPayload
+    const payload = jwt.verify(token, secret(), { algorithms: ['HS256'] }) as NeuromoveJwtPayload & { purpose?: string }
+    // A passkey challenge token is not a sign-in.
+    if (payload.purpose || !payload.sub || !payload.role) return null
     return payload
   } catch {
     return null
@@ -79,4 +87,18 @@ export function requireRole(
   role: string,
 ): boolean {
   return !!user && user.role.toUpperCase() === role.toUpperCase()
+}
+
+/** Short-lived signed value (a passkey challenge) the client hands back; nothing stored server-side. */
+export function signShort(data: Record<string, string>, seconds: number): string {
+  return jwt.sign({ ...data, purpose: 'short' }, secret(), { expiresIn: seconds, algorithm: 'HS256' })
+}
+
+export function verifyShort(token: string): Record<string, string> | null {
+  try {
+    const p = jwt.verify(token, secret(), { algorithms: ['HS256'] }) as Record<string, string>
+    return p.purpose === 'short' ? p : null
+  } catch {
+    return null
+  }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/goals?patientId=X — list a patient's goals (achieved + active).
@@ -13,12 +14,7 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url)
   const patientId = url.searchParams.get('patientId')
-  const isDoctor = requireRole(payload, 'DOCTOR') || requireRole(payload, 'ADMIN')
-  const targetPatient = patientId
-    ? isDoctor || patientId === payload.sub
-      ? patientId
-      : payload.sub
-    : payload.sub
+  const targetPatient = patientId && (await canAccessPatient(payload, patientId)) ? patientId : payload.sub
 
   const goals = await db.rehabGoal.findMany({
     where: { patientId: targetPatient },
@@ -46,6 +42,9 @@ export async function POST(req: NextRequest) {
   const patientId = String(body.patientId || '')
   if (!patientId) {
     return NextResponse.json({ ok: false, error: 'patientId is required' }, { status: 400 })
+  }
+  if (!(await canAccessPatient(payload, patientId))) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
   const validTypes = ['rom_target', 'rep_count', 'accuracy', 'streak']
   const type = validTypes.includes(body.type) ? body.type : 'rom_target'

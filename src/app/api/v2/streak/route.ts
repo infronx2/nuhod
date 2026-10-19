@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStreak } from '@/lib/streaks'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/streak?userId=X — returns the streak for the current user
@@ -12,10 +13,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const url = new URL(req.url)
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
   const userIdParam = url.searchParams.get('userId')
   const targetUserId =
-    userIdParam && (isDoctor || userIdParam === payload.sub)
+    userIdParam && (await canAccessPatient(payload, userIdParam))
       ? userIdParam
       : payload.sub
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { Prisma, type RehabSession } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 import { awardBadges } from '@/lib/badges'
 import { summarizeSession } from '@/lib/muin/summary'
 
@@ -19,13 +20,8 @@ export async function GET(req: NextRequest) {
   const patientId = url.searchParams.get('patientId')
   const limit = clampInt(url.searchParams.get('limit'), 1, 500, 50)
 
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
   const where = patientId
-    ? isDoctor
-      ? { patientId }
-      : payload.sub === patientId
-        ? { patientId }
-        : { patientId: '__forbidden__' }
+    ? (await canAccessPatient(payload, patientId)) ? { patientId } : { patientId: '__forbidden__' }
     : { patientId: payload.sub }
 
   const sessions = await db.rehabSession.findMany({
@@ -74,8 +70,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'patientId must be a string' }, { status: 400 })
   }
 
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
-  if (!isDoctor && payload.sub !== body.patientId) {
+  if (!(await canAccessPatient(payload, body.patientId))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 
@@ -118,6 +113,9 @@ export async function POST(req: NextRequest) {
         pinchCount: clampInt(body.pinchCount, 0, 100000, 0),
         tasksAssisted: clampInt(body.tasksAssisted, 0, 100000, 0),
         painStop,
+        painBefore: optScale(body.painBefore, 10),
+        fatigueBefore: optScale(body.fatigueBefore, 2),
+        painAfter: optScale(body.painAfter, 10),
         compensationErrors: clampInt(body.compensationErrors, 0, 100000, 0),
         gamificationScore: clampInt(body.gamificationScore, 0, 1000000, 0),
         angleTimeline: Array.isArray(body.angleTimeline)
@@ -165,18 +163,22 @@ export async function POST(req: NextRequest) {
     if (newBadges.length > 0) {
       await notifyBadgesEarned(body.patientId, newBadges.map((b) => b.slug))
     }
-    if (painStop) {
-      // Every doctor with an active plan for this patient hears about a pain stop.
+    // The patient's doctor hears about a pain stop, or pain that rose during the session.
+    const painRose = session.painAfter !== null && (session.painAfter >= 7 || (session.painBefore !== null && session.painAfter - session.painBefore >= 3))
+    if (painStop || painRose) {
       const plans = await db.treatmentPlan.findMany({
         where: { patientId: body.patientId, active: true },
         select: { doctorId: true },
       })
-      for (const doctorId of new Set(plans.map((p) => p.doctorId))) {
+      const doctors = new Set([patient.doctorId, ...plans.map((p) => p.doctorId)].filter((d): d is string => !!d))
+      for (const doctorId of doctors) {
         await createNotification({
           userId: doctorId,
           type: 'info',
-          title: `توقف للألم: ${patient.name}`,
-          body: `أنهى ${patient.name} الجلسة بزر الألم بعد ${Math.round(session.durationSeconds / 60)} دقيقة.`,
+          title: painStop ? `توقف للألم: ${patient.name}` : `ألم بعد الجلسة: ${patient.name}`,
+          body: painStop
+            ? `أنهى ${patient.name} الجلسة بزر الألم بعد ${Math.round(session.durationSeconds / 60)} دقيقة.`
+            : `الألم قبل الجلسة ${session.painBefore ?? '—'}/10 وبعدها ${session.painAfter}/10.`,
           severity: 'warning',
           linkType: 'session',
           linkId: session.id,
@@ -192,6 +194,11 @@ export async function POST(req: NextRequest) {
 }
 
 const CLIENT_SESSION_ID = /^[A-Za-z0-9-]{8,64}$/
+
+/** An optional 0..max whole-number answer (pain 0-10, tiredness 0-2); anything else is left empty. */
+function optScale(v: unknown, max: number): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max ? Math.round(v) : null
+}
 const LIMBS = new Set(['right', 'left', 'bilateral'])
 
 function replayed(existing: RehabSession, patientId: string) {

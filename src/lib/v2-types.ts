@@ -16,6 +16,10 @@ export interface V2User {
   affectedSide?: string
   dateOfBirth?: string | null
   createdAt?: string
+  /** Patients added by a doctor sign in with this (and a PIN); they have no visible email. */
+  username?: string | null
+  /** When the patient agreed to the in-app information screen; null until then. */
+  patientConsentAt?: string | null
 }
 
 export interface AuthResponse {
@@ -200,7 +204,13 @@ export interface V2EarnedBadge {
 
 export interface V2PatientDetail {
   ok: true
-  patient: V2User & { role: string }
+  patient: V2User & {
+    role: string
+    active?: boolean
+    consentSignedAt?: string | null
+    /** Number of Face ID / fingerprint passkeys on the patient's devices. */
+    passkeys?: number
+  }
   activePlan: V2TreatmentPlan | null
   sessions: V2Session[]
   earnedBadges: V2EarnedBadge[]

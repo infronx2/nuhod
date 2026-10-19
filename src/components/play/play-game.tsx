@@ -11,9 +11,9 @@ import type { Game, HudState } from './game'
 import type { Plan } from './tasks'
 import { flushPending, saveSession } from './session'
 
-type Phase = 'intro' | 'loading' | 'position' | 'play' | 'saving' | 'done' | 'error'
+type Phase = 'intro' | 'check' | 'rest' | 'loading' | 'position' | 'play' | 'after' | 'saving' | 'done' | 'error'
 
-interface ActivePlan { targetAngle: number; dailyRepGoal: number; targetLimb: string; active: boolean }
+interface ActivePlan { targetAngle: number; dailyRepGoal: number; targetLimb: string; active: boolean; maxSessionMinutes?: number }
 
 const POSITION_HOLD_MS = 1500
 
@@ -32,6 +32,11 @@ export function PlayGame() {
   const [saved, setSaved] = React.useState<boolean | null>(null)
   const [summary, setSummary] = React.useState<{ tasks: number; angle: number; minutes: number; painStop: boolean } | null>(null)
   const [plan, setPlan] = React.useState<Plan>({ targetAngle: 45, dailyTasks: 0, limb: 'both' })
+  // Before the session: pain 0-10 and tiredness 0-2; after it: pain again. Sent with the session.
+  const [painBefore, setPainBefore] = React.useState<number | null>(null)
+  const [fatigue, setFatigue] = React.useState<number | null>(null)
+  const [maxMinutes, setMaxMinutes] = React.useState(20)
+  const [timeUp, setTimeUp] = React.useState(false)
   const stage = React.useRef<HTMLDivElement>(null)
   const video = React.useRef<HTMLVideoElement>(null)
   const game = React.useRef<Game | null>(null)
@@ -45,6 +50,7 @@ export function PlayGame() {
     apiFetch<{ ok: boolean; plans: ActivePlan[] }>(`/api/v2/patients/${user.id}/plans`)
       .then((d) => {
         const p = d.plans?.find((x) => x.active)
+        if (p?.maxSessionMinutes) setMaxMinutes(p.maxSessionMinutes)
         if (p) setPlan({
           targetAngle: p.targetAngle,
           dailyTasks: p.dailyRepGoal,
@@ -54,21 +60,48 @@ export function PlayGame() {
       .catch(() => undefined)
   }, [user])
 
-  const finish = React.useCallback(async () => {
+  const extras = React.useCallback((painAfter: number | null) => ({ painBefore, fatigueBefore: fatigue, painAfter }), [painBefore, fatigue])
+
+  /** Ends the session; one worth keeping first asks how the pain is now, then saves. */
+  const finish = React.useCallback(() => {
     const g = game.current
     if (!g || !user) return
     g.end()
-    setPhase('saving')
     const r = g.record
     setSummary({ tasks: r.reps, angle: Math.round(r.maxAngle), minutes: Math.max(1, Math.round(r.seconds / 60)), painStop: r.painStop })
     if (r.worthSaving()) {
-      g.voice.say('session_end')
-      setSaved(await saveSession(r.payload(user.id)))
+      setPhase('after')
     } else {
       setSaved(null)
+      setPhase('done')
     }
-    setPhase('done')
   }, [user])
+
+  const save = React.useCallback(async (painAfter: number | null) => {
+    const g = game.current
+    if (!g || !user) return
+    setPhase('saving')
+    g.voice.say('session_end')
+    setSaved(await saveSession({ ...g.record.payload(user.id), ...extras(painAfter) }))
+    setPhase('done')
+  }, [user, extras])
+
+  // The doctor's limit on session length: the session ends and the patient is asked to rest.
+  React.useEffect(() => {
+    if (phase !== 'play') return
+    const id = setTimeout(() => { setTimeUp(true); finish() }, maxMinutes * 60_000)
+    return () => clearTimeout(id)
+  }, [phase, maxMinutes, finish])
+
+  const submitCheck = async () => {
+    if (painBefore === null || fatigue === null) return
+    let allowed = painBefore < 7 && fatigue < 2
+    try {
+      allowed = (await apiFetch<{ allowed: boolean }>('/api/v2/checkins', { method: 'POST', json: { pain: painBefore, fatigue } })).allowed
+    } catch { /* offline: decide here with the same rule */ }
+    if (allowed) void begin()
+    else setPhase('rest')
+  }
 
   // Leaving mid-session keeps the session in the browser; it is sent on the next visit.
   React.useEffect(() => {
@@ -78,13 +111,13 @@ export function PlayGame() {
         try {
           const key = 'nuhoud_pending_sessions'
           const list = JSON.parse(localStorage.getItem(key) || '[]').filter((x: { clientSessionId: string }) => x.clientSessionId !== g.record.clientSessionId)
-          localStorage.setItem(key, JSON.stringify([...list, g.record.payload(user.id)]))
+          localStorage.setItem(key, JSON.stringify([...list, { ...g.record.payload(user.id), ...extras(null) }]))
         } catch { /* storage blocked */ }
       }
     }
     window.addEventListener('pagehide', onHide)
     return () => window.removeEventListener('pagehide', onHide)
-  }, [phase, user])
+  }, [phase, user, extras])
 
   React.useEffect(() => () => {
     game.current?.dispose()
@@ -123,7 +156,7 @@ export function PlayGame() {
         } else if (!s.instruction) {
           positionedSince.current = null
         }
-      }, () => void finish())
+      }, () => finish())
       g.voice.unlock()
       game.current = g
       step = 'tracking'
@@ -179,6 +212,18 @@ export function PlayGame() {
     )
   }
 
+  if (user.role === 'PATIENT' && !user.patientConsentAt) {
+    return (
+      <FullScreen>
+        <Panel>
+          <p className="text-lg font-semibold">قبل أول جلسة</p>
+          <p className="mt-2 text-sm text-white/80">اقرأ معلومات البرنامج ووافق عليها من الصفحة الرئيسية.</p>
+          <Button asChild className="mt-4 h-12 w-full text-base"><a href="/">الصفحة الرئيسية</a></Button>
+        </Panel>
+      </FullScreen>
+    )
+  }
+
   const goalText = plan.dailyTasks > 0 ? `${hud?.done ?? 0} / ${plan.dailyTasks}` : `${hud?.done ?? 0}`
   const seen = hud?.body && (hud.hands.right || hud.hands.left)
 
@@ -212,7 +257,7 @@ export function PlayGame() {
               </Step>
               <Step icon={OctagonAlert}>إذا حسيت بألم، اضغط زر «ألم» الأحمر وتوقف الجلسة فوراً.</Step>
             </ul>
-            <Button onClick={() => void begin()} className="mt-6 h-14 w-full rounded-2xl bg-white text-lg font-semibold text-[#0B3E46] hover:bg-[#E2F3F1]">
+            <Button onClick={() => setPhase('check')} className="mt-6 h-14 w-full rounded-2xl bg-white text-lg font-semibold text-[#0B3E46] hover:bg-[#E2F3F1]">
               ابدأ
             </Button>
             <p className="mt-3 text-center text-xs text-white/50">التتبع يصير داخل جهازك، والفيديو ما يطلع منه.</p>
@@ -249,7 +294,7 @@ export function PlayGame() {
               <IconButton label={muted ? 'تشغيل الصوت' : 'كتم الصوت'} onClick={() => setMuted((m) => !m)}>
                 {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
               </IconButton>
-              <IconButton label="إنهاء الجلسة" onClick={() => void finish()}><X className="h-5 w-5" /></IconButton>
+              <IconButton label="إنهاء الجلسة" onClick={() => finish()}><X className="h-5 w-5" /></IconButton>
             </div>
           </div>
           {!seen && (
@@ -266,7 +311,7 @@ export function PlayGame() {
           </div>
           <button
             type="button"
-            onClick={() => { game.current?.painStop(); void finish() }}
+            onClick={() => { game.current?.painStop(); finish() }}
             className="absolute bottom-5 right-4 z-20 flex h-16 w-16 flex-col items-center justify-center rounded-full bg-[#D64545] text-sm font-bold shadow-[0_10px_30px_-8px_rgb(214_69_69/0.8)] active:scale-95 sm:h-20 sm:w-20"
             aria-label="أحس بألم، أوقف الجلسة"
           >
@@ -274,6 +319,50 @@ export function PlayGame() {
             ألم
           </button>
         </>
+      )}
+
+      {phase === 'check' && (
+        <FullScreen>
+          <Panel>
+            <p className="text-lg font-semibold">قبل ما نبدأ، كيف حالك الحين؟</p>
+            <PainScale label="كم الألم في يدك أو كتفك؟" value={painBefore} onChange={setPainBefore} />
+            <p className="mt-5 text-sm text-white/80">وكيف التعب؟</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {['مرتاح', 'تعبان شوي', 'تعبان وايد'].map((label, i) => (
+                <button key={label} type="button" onClick={() => setFatigue(i)}
+                  className={cn('h-12 rounded-xl border text-sm font-medium', fatigue === i ? 'border-white bg-white text-[#0B3E46]' : 'border-white/20 bg-white/5')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Button disabled={painBefore === null || fatigue === null} onClick={() => void submitCheck()} className="mt-6 h-14 w-full rounded-2xl bg-white text-lg font-semibold text-[#0B3E46] hover:bg-[#E2F3F1]">
+              تابع
+            </Button>
+          </Panel>
+        </FullScreen>
+      )}
+
+      {phase === 'rest' && (
+        <FullScreen>
+          <Panel>
+            <p className="text-2xl font-semibold">خلنا نرتاح اليوم</p>
+            <p className="mt-3 text-sm leading-relaxed text-white/80">
+              {painBefore !== null && painBefore >= 7 ? 'الألم عالي اليوم، والتمرين ممكن يزيده.' : 'جسمك محتاج راحة اليوم.'} وصلت ملاحظتك لطبيبك.
+              إذا الألم قوي أو جديد، كلّم طبيبك أو اتصل بالطوارئ.
+            </p>
+            <Button asChild className="mt-6 h-12 w-full rounded-xl bg-white text-base font-semibold text-[#0B3E46] hover:bg-[#E2F3F1]"><a href="/">الرئيسية</a></Button>
+          </Panel>
+        </FullScreen>
+      )}
+
+      {phase === 'after' && (
+        <FullScreen>
+          <Panel>
+            <p className="text-lg font-semibold">{timeUp ? 'خلص وقت جلسة اليوم، أحسنت' : 'خلصت الجلسة'}</p>
+            <PainScale label="وكم الألم الحين؟" value={null} onChange={(v) => void save(v)} />
+            <button type="button" onClick={() => void save(null)} className="mt-4 w-full text-center text-sm text-white/60 underline-offset-4 hover:underline">تخطي</button>
+          </Panel>
+        </FullScreen>
       )}
 
       {(phase === 'saving' || phase === 'done') && (
@@ -348,5 +437,24 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
     <button type="button" aria-label={label} onClick={onClick} className="flex h-11 w-11 items-center justify-center rounded-2xl bg-black/50 backdrop-blur-md active:scale-95">
       {children}
     </button>
+  )
+}
+
+/** 0 (no pain) to 10 (worst), as big buttons a patient can tap with one finger. */
+function PainScale({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number) => void }) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-white/80">{label}</p>
+      <div className="mt-2 grid grid-cols-6 gap-1.5 sm:grid-cols-11">
+        {Array.from({ length: 11 }, (_, n) => (
+          <button key={n} type="button" onClick={() => onChange(n)} aria-label={`${n} من 10`}
+            className={cn('h-11 rounded-lg text-base font-semibold tabular-nums',
+              value === n ? 'bg-white text-[#0B3E46]' : n >= 7 ? 'bg-[#D64545]/30' : n >= 4 ? 'bg-amber-500/25' : 'bg-emerald-500/20')}>
+            {n}
+          </button>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] text-white/50"><span>ما فيه ألم</span><span>ألم شديد</span></div>
+    </div>
   )
 }

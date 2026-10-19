@@ -43,6 +43,7 @@ import { AccuracyDonut } from '@/components/nuhoud/accuracy-donut'
 import { RomTrendChart } from '@/components/nuhoud/rom-trend-chart'
 import { GripTrendChart } from '@/components/nuhoud/grip-trend-chart'
 import { PlanEditorDialog } from '@/components/nuhoud/plan-editor-dialog'
+import { PatientTrialPanel } from '@/components/nuhoud/patient-trial-panel'
 import { ActivityHeatmap } from '@/components/nuhoud/activity-heatmap'
 import { CompTrendChart } from '@/components/nuhoud/comp-trend-chart'
 import { LimbBreakdown } from '@/components/nuhoud/limb-breakdown'
@@ -199,9 +200,9 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
                 </Badge>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
+                <span className="inline-flex items-center gap-1" dir="ltr">
                   <Mail className="h-3 w-3" />
-                  {detail.patient.email}
+                  {detail.patient.email || detail.patient.username}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <Cake className="h-3 w-3" />
@@ -323,6 +324,8 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
           </div>
         )}
       </Card>
+
+      {detail && <PatientTrialPanel detail={detail} onChanged={() => void fetchDetail()} />}
 
       {/* ---------- KPI row ---------- */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

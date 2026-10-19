@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/stats/distribution?patientId=X
@@ -25,18 +26,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const url = new URL(req.url)
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
+  const isDoctor = isStaff(payload)
   const patientIdParam = url.searchParams.get('patientId')
 
   let where: any
   if (patientIdParam) {
-    if (isDoctor || patientIdParam === payload.sub) {
+    if (await canAccessPatient(payload, patientIdParam)) {
       where = { patientId: patientIdParam }
     } else {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
     }
   } else if (isDoctor) {
-    where = {}
+    where = { patientId: { in: await staffPatientIds(payload) } }
   } else {
     where = { patientId: payload.sub }
   }
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
   } else {
     // Global: average adherence across all patients with an active plan.
     const patients = await db.user.findMany({
-      where: { role: 'PATIENT' },
+      where: isDoctor ? staffPatientWhere(payload) : { id: payload.sub },
       select: { id: true },
     })
     let totalPct = 0

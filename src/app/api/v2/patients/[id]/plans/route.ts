@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { canAccessPatient } from '@/lib/access'
 import { createDefaultPlan, isTargetLimb, sideToTargetLimb, targetLimbToSide } from '@/lib/plans'
 
 // POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient (the new plan
@@ -16,6 +17,9 @@ export async function POST(
   }
   if (!requireRole(payload, 'DOCTOR') && !requireRole(payload, 'ADMIN')) {
     return NextResponse.json({ ok: false, error: 'forbidden — doctors only' }, { status: 403 })
+  }
+  if (!(await canAccessPatient(payload, (await ctx.params).id))) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
   const { id: patientId } = await ctx.params
 
@@ -72,7 +76,7 @@ export async function GET(
   }
   const { id: patientId } = await ctx.params
   const isDoctor = requireRole(payload, 'DOCTOR') || requireRole(payload, 'ADMIN')
-  if (!isDoctor && payload.sub !== patientId) {
+  if (!(await canAccessPatient(payload, patientId))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
   const list = () => db.treatmentPlan.findMany({
@@ -84,7 +88,7 @@ export async function GET(
   // Both games read this before a session. A patient with no plan at all (the starter plan failed
   // at sign-up, or the account predates it) gets the starter plan now, so every account can play.
   if (plans.length === 0 && !isDoctor) {
-    const patient = await db.user.findUnique({ where: { id: patientId }, select: { id: true, role: true, affectedSide: true } })
+    const patient = await db.user.findUnique({ where: { id: patientId }, select: { id: true, role: true, affectedSide: true, doctorId: true } })
     if (patient?.role === 'PATIENT') {
       try {
         if (await createDefaultPlan(patient)) plans = await list()

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { getUserFromRequest, hashPassword } from '@/lib/auth'
+import { isStaff, staffPatientWhere } from '@/lib/access'
+import { audit } from '@/lib/audit'
+import { createDefaultPlan, parseSide } from '@/lib/plans'
+import { CONSENT_VERSION, PATIENT_EMAIL_DOMAIN, USERNAME_RE, issueLoginToken, newPin, suggestUsername } from '@/lib/patient-accounts'
 
 // Sessions per patient the roster indicators look at.
 const RECENT_SESSIONS = 6
 
 // GET /api/v2/patients?role=PATIENT
-// - Doctors see ALL patients.
+// - A doctor sees the patients they follow (an admin sees all).
 // - Patients see only themselves.
 // Each patient row includes their latest session summary, active plan, and progress indicators.
 export async function GET(req: NextRequest) {
@@ -15,18 +19,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
 
-  const isDoctor = requireRole(payload, 'DOCTOR') || requireRole(payload, 'ADMIN')
+  const isDoctor = isStaff(payload)
 
   // For a doctor: list every patient with their latest session + plan counts.
   // For a patient: only their own row.
   const users = await db.user.findMany({
     where: isDoctor
-      ? { role: 'PATIENT' }
+      ? staffPatientWhere(payload)
       : { id: payload.sub, role: 'PATIENT' },
     select: {
       id: true,
       name: true,
       email: true,
+      username: true,
+      active: true,
       avatarSeed: true,
       affectedSide: true,
       dateOfBirth: true,
@@ -85,7 +91,9 @@ export async function GET(req: NextRequest) {
       return {
         id: u.id,
         name: u.name,
-        email: u.email,
+        email: u.email.endsWith(`@${PATIENT_EMAIL_DOMAIN}`) ? '' : u.email,
+        username: u.username,
+        active: u.active,
         avatarSeed: u.avatarSeed,
         affectedSide: u.affectedSide,
         dateOfBirth: u.dateOfBirth,
@@ -115,6 +123,62 @@ export async function GET(req: NextRequest) {
       }
     }),
   })
+}
+
+// POST /api/v2/patients — a doctor adds a patient they will follow.
+// Body: { name, affectedSide?, dateOfBirth?, username?, consentSigned: true, screening: { [item]: boolean } }
+// Returns the username, a 6-digit PIN (shown once) and a one-time QR sign-in token.
+export async function POST(req: NextRequest) {
+  const payload = getUserFromRequest(req)
+  if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
+  if (!isStaff(payload)) return NextResponse.json({ ok: false, error: 'forbidden — doctors only' }, { status: 403 })
+  const body = await req.json().catch(() => null)
+  const name = String(body?.name || '').trim().slice(0, 80)
+  if (!name) return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 })
+  if (body?.consentSigned !== true) {
+    return NextResponse.json({ ok: false, error: 'written consent must be recorded first' }, { status: 400 })
+  }
+  const screening = body?.screening && typeof body.screening === 'object' ? body.screening : {}
+  if (Object.values(screening).some((v) => v !== true)) {
+    return NextResponse.json({ ok: false, error: 'every eligibility item must be confirmed' }, { status: 400 })
+  }
+  let username = String(body?.username || '').trim().toLowerCase()
+  if (username && !USERNAME_RE.test(username)) {
+    return NextResponse.json({ ok: false, error: 'username: 3-24 English letters or digits, starting with a letter' }, { status: 400 })
+  }
+  if (username && (await db.user.findUnique({ where: { username }, select: { id: true } }))) {
+    return NextResponse.json({ ok: false, error: 'username taken' }, { status: 409 })
+  }
+  if (!username) username = await suggestUsername()
+  const dob = typeof body?.dateOfBirth === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.dateOfBirth) ? body.dateOfBirth : null
+
+  const pin = newPin()
+  const user = await db.user.create({
+    data: {
+      role: 'PATIENT',
+      name,
+      username,
+      email: `${username}@${PATIENT_EMAIL_DOMAIN}`,
+      pinHash: hashPassword(pin),
+      affectedSide: parseSide(body?.affectedSide) ?? 'right',
+      dateOfBirth: dob,
+      doctorId: payload.sub,
+      consentSignedAt: new Date(),
+      consentRecordedBy: payload.sub,
+      consentVersion: CONSENT_VERSION,
+      screening: JSON.stringify(screening),
+    },
+  })
+  // The starter plan under this doctor, so the patient can play in the clinic and at home at once.
+  const doctor = await db.user.findUnique({ where: { id: payload.sub }, select: { id: true, name: true } })
+  try {
+    await createDefaultPlan(user, doctor ?? undefined)
+  } catch (err) {
+    console.error('[patients] starter plan failed', err)
+  }
+  const qr = await issueLoginToken(user.id, payload.sub)
+  await audit(req, { actorId: payload.sub, action: 'patient_created', patientId: user.id })
+  return NextResponse.json({ ok: true, patient: { id: user.id, name: user.name, username }, pin, qrToken: qr.token, qrExpiresAt: qr.expiresAt })
 }
 
 type IndicatorSession = {

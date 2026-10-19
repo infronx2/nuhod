@@ -2,7 +2,7 @@
 // PostgreSQL provider for Supabase production.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x", "rhel-openssl-3.0.x"]
 }
 
@@ -26,35 +26,130 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  plans            TreatmentPlan[] @relation("PatientPlans")
-  prescribedPlans  TreatmentPlan[] @relation("DoctorPlans")
-  sessions         RehabSession[]
-  earnedBadges     EarnedBadge[]
+  /// Patients a doctor adds sign in with a username and a 6-digit PIN (also typed into the clinic game),
+  /// a one-time QR code, or a passkey (Face ID / fingerprint). Doctors keep email and password.
+  username          String?   @unique
+  pinHash           String?
+  /// The doctor following this patient; only they (and admins) see the patient's records.
+  doctorId          String?
+  doctor            User?     @relation("DoctorPatients", fields: [doctorId], references: [id])
+  patients          User[]    @relation("DoctorPatients")
+  /// Written consent for the trial, recorded by the doctor who added the patient.
+  consentSignedAt   DateTime?
+  consentRecordedBy String?
+  consentVersion    String?
+  /// The patient read the information screen in the app and agreed.
+  patientConsentAt  DateTime?
+  /// Eligibility checklist the doctor confirmed (JSON).
+  screening         String?
+
+  plans           TreatmentPlan[]  @relation("PatientPlans")
+  prescribedPlans TreatmentPlan[]  @relation("DoctorPlans")
+  sessions        RehabSession[]
+  earnedBadges    EarnedBadge[]
+  passkeys        Passkey[]
+  measures        OutcomeMeasure[]
 
   @@index([role])
   @@index([email])
+  @@index([doctorId])
+}
+
+/// A passkey (WebAuthn credential): Face ID, Touch ID or a fingerprint on the patient's own phone.
+/// The face or fingerprint never leaves the device; the server only keeps a public key.
+model Passkey {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// base64url credential id.
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String?
+  deviceLabel  String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+}
+
+/// One-time sign-in link a doctor shows as a QR code; only a hash of the token is stored.
+model LoginToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String
+  createdById String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/// Failed sign-ins, for locking out guessing (by account and by network address).
+model AuthAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+/// Who did what to which patient's records, for the trial's data-protection audit.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  patientId String?
+  detail    String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}
+
+/// A standard clinical measure the doctor takes by hand (Fugl-Meyer, Box and Block, Ashworth,
+/// goniometer, pain), at baseline, mid-trial and the end, to judge the trial and check the camera's angles.
+model OutcomeMeasure {
+  id           String   @id @default(cuid())
+  patientId    String
+  patient      User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  recordedById String
+  instrument   String
+  value        Float
+  side         String?
+  timepoint    String   @default("other")
+  measuredAt   DateTime @default(now())
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@index([patientId, measuredAt])
 }
 
 /// A clinician-prescribed rehabilitation plan for a patient.
 model TreatmentPlan {
-  id              String   @id @default(cuid())
-  patientId       String
-  patient         User     @relation("PatientPlans", fields: [patientId], references: [id], onDelete: Cascade)
-  doctorId        String
-  doctor          User     @relation("DoctorPlans", fields: [doctorId], references: [id])
-  title           String   @default("Upper-limb rehab plan")
-  targetLimb      String   @default("upper_right")
-  targetAngle     Int      @default(90)
-  sessionsPerWeek Int      @default(5)
-  dailyRepGoal    Int      @default(20)
-  startDate       DateTime @default(now())
-  endDate         DateTime?
-  active          Boolean  @default(true)
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String    @id @default(cuid())
+  patientId         String
+  patient           User      @relation("PatientPlans", fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId          String
+  doctor            User      @relation("DoctorPlans", fields: [doctorId], references: [id])
+  title             String    @default("Upper-limb rehab plan")
+  targetLimb        String    @default("upper_right")
+  targetAngle       Int       @default(90)
+  sessionsPerWeek   Int       @default(5)
+  dailyRepGoal      Int       @default(20)
+  /// The longest a session may run before the game asks the patient to rest.
+  maxSessionMinutes Int       @default(20)
+  startDate         DateTime  @default(now())
+  endDate           DateTime?
+  active            Boolean   @default(true)
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  sessions        RehabSession[]
+  sessions RehabSession[]
 
   @@index([patientId])
   @@index([doctorId])
@@ -63,35 +158,40 @@ model TreatmentPlan {
 
 /// A completed rehabilitation session - one row per finished game/exercise.
 model RehabSession {
-  id                 String   @id @default(cuid())
+  id                 String         @id @default(cuid())
   patientId          String
-  patient            User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient            User           @relation(fields: [patientId], references: [id], onDelete: Cascade)
   planId             String?
   plan               TreatmentPlan? @relation(fields: [planId], references: [id])
-  source             String   @default("demo")
-  limb               String   @default("right")
-  sessionDate       DateTime @default(now())
-  durationSeconds    Int      @default(0)
-  totalReps          Int      @default(0)
-  correctReps        Int      @default(0)
-  maxAchievedAngle   Float    @default(0)
-  avgShoulderAngle   Float    @default(0)
-  maxElbowROM        Float    @default(0)
+  source             String         @default("demo")
+  limb               String         @default("right")
+  sessionDate        DateTime       @default(now())
+  durationSeconds    Int            @default(0)
+  totalReps          Int            @default(0)
+  correctReps        Int            @default(0)
+  maxAchievedAngle   Float          @default(0)
+  avgShoulderAngle   Float          @default(0)
+  maxElbowROM        Float          @default(0)
   /// Hand function from the majlis game: best fist closure (0-100 %), closest thumb-index pinch (cm, 0 = none),
   /// objects picked up by fist / by pinch, and tasks finished only with the assisted (touch) fallback.
-  gripClosureMax     Float    @default(0)
-  pinchMinCm         Float    @default(0)
-  graspCount         Int      @default(0)
-  pinchCount         Int      @default(0)
-  tasksAssisted      Int      @default(0)
+  gripClosureMax     Float          @default(0)
+  pinchMinCm         Float          @default(0)
+  graspCount         Int            @default(0)
+  pinchCount         Int            @default(0)
+  tasksAssisted      Int            @default(0)
   /// The patient ended the session with the pain-stop button.
-  painStop           Boolean  @default(false)
-  compensationErrors Int      @default(0)
-  gamificationScore  Int      @default(0)
+  painStop           Boolean        @default(false)
+  /// Pain (0-10) and tiredness (0 rested, 1 a little, 2 very) the patient reported before the session,
+  /// and pain after it. Empty when the game does not ask (the clinic game, with the doctor present).
+  painBefore         Int?
+  fatigueBefore      Int?
+  painAfter          Int?
+  compensationErrors Int            @default(0)
+  gamificationScore  Int            @default(0)
   angleTimeline      String?
   /// Id the game gives a session before uploading it; a replayed offline upload reuses it instead of duplicating.
-  clientSessionId    String?  @unique
-  createdAt          DateTime @default(now())
+  clientSessionId    String?        @unique
+  createdAt          DateTime       @default(now())
 
   @@index([patientId])
   @@index([sessionDate])
@@ -100,27 +200,27 @@ model RehabSession {
 
 /// Library of clinical exercise presets the doctor can prescribe.
 model ExercisePreset {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  name        String
-  nameAr      String?
-  description String
-  joint       String   @default("elbow")
-  limb        String   @default("right")
-  targetAngle Int      @default(90)
-  difficulty  String   @default("beginner")
-  sessionsPerWeek Int   @default(5)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  nameAr          String?
+  description     String
+  joint           String   @default("elbow")
+  limb            String   @default("right")
+  targetAngle     Int      @default(90)
+  difficulty      String   @default("beginner")
+  sessionsPerWeek Int      @default(5)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
 }
 
 /// Gamification badges earned by a patient (one row per badge per patient).
 model EarnedBadge {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  slug      String
-  earnedAt  DateTime @default(now())
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug     String
+  earnedAt DateTime @default(now())
 
   @@unique([userId, slug])
   @@index([userId])
@@ -128,12 +228,12 @@ model EarnedBadge {
 
 /// Persisted AI coach chat messages.
 model ChatMessage {
-  id          String   @id @default(cuid())
-  speakerId   String
-  patientId   String
-  role        String
-  content     String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  speakerId String
+  patientId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
 
   @@index([speakerId, patientId, createdAt])
   @@index([patientId])
@@ -158,17 +258,17 @@ model Notification {
 
 /// Doctor-set rehabilitation goals for a patient.
 model RehabGoal {
-  id          String   @id @default(cuid())
-  patientId   String
-  type        String   @default("rom_target")
-  title       String
-  targetValue Float
-  currentValue Float  @default(0)
-  achieved    Boolean  @default(false)
-  achievedAt  DateTime?
-  startDate   DateTime @default(now())
-  targetDate  DateTime?
-  createdAt   DateTime @default(now())
+  id           String    @id @default(cuid())
+  patientId    String
+  type         String    @default("rom_target")
+  title        String
+  targetValue  Float
+  currentValue Float     @default(0)
+  achieved     Boolean   @default(false)
+  achievedAt   DateTime?
+  startDate    DateTime  @default(now())
+  targetDate   DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([patientId, achieved])
   @@index([patientId])
@@ -176,13 +276,13 @@ model RehabGoal {
 
 /// Rehabilitation streak tracker.
 model Streak {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  currentStreak Int      @default(0)
-  longestStreak Int      @default(0)
-  freezesLeft   Int      @default(2)
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  freezesLeft     Int      @default(2)
   lastSessionDate String?
-  updatedAt     DateTime @updatedAt
+  updatedAt       DateTime @updatedAt
 
   @@index([userId])
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 // GET /api/v2/stats?patientId=...
 // Aggregate clinical + gamification stats across persisted sessions.
@@ -13,13 +14,13 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url)
   const patientId = url.searchParams.get('patientId')
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
+  const isDoctor = isStaff(payload)
 
   const where =
-    patientId && (isDoctor || patientId === payload.sub)
+    patientId && (await canAccessPatient(payload, patientId))
       ? { patientId }
       : isDoctor
-        ? {}
+        ? { patientId: { in: await staffPatientIds(payload) } }
         : { patientId: payload.sub }
 
   const sessions = await db.rehabSession.findMany({

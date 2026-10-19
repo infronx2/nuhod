@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/stats/heatmap?patientId=X&weeks=12
@@ -30,21 +31,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const url = new URL(req.url)
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
+  const isDoctor = isStaff(payload)
   const weeks = Math.min(Math.max(parseInt(url.searchParams.get('weeks') || '12', 10) || 12, 4), 52)
   const patientIdParam = url.searchParams.get('patientId')
 
   // Build the "where" clause.
   let where: any
   if (patientIdParam) {
-    if (isDoctor || patientIdParam === payload.sub) {
+    if (await canAccessPatient(payload, patientIdParam)) {
       where = { patientId: patientIdParam }
     } else {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
     }
   } else if (isDoctor) {
-    // Doctors without a patientId get an aggregate across ALL patients.
-    where = {}
+    // Doctors without a patientId get an aggregate across the patients they follow.
+    where = { patientId: { in: await staffPatientIds(payload) } }
   } else {
     where = { patientId: payload.sub }
   }

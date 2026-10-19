@@ -29,6 +29,8 @@ interface AuthState {
   }) => Promise<V2User>
   logout: () => void
   refresh: () => Promise<void>
+  /** Takes the reply of any sign-in route (QR code, passkey) and signs the user in. */
+  acceptSignIn: (data: { token: string; user: V2User }) => V2User
 }
 
 const AuthContext = React.createContext<AuthState | null>(null)
@@ -117,14 +119,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
+  const acceptSignIn = React.useCallback((data: { token: string; user: V2User }) => {
+    setToken(data.token)
+    setUser(data.user)
+    return data.user
+  }, [])
+
   const logout = React.useCallback(() => {
     setToken(null)
     setUser(null)
   }, [])
 
   const value = React.useMemo<AuthState>(
-    () => ({ user, loading, login, register, logout, refresh }),
-    [user, loading, login, register, logout, refresh],
+    () => ({ user, loading, login, register, logout, refresh, acceptSignIn }),
+    [user, loading, login, register, logout, refresh, acceptSignIn],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/stats/weekly-insights?patientId=X
@@ -15,10 +16,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const url = new URL(req.url)
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
   const patientIdParam = url.searchParams.get('patientId')
   const targetPatient =
-    patientIdParam && (isDoctor || patientIdParam === payload.sub)
+    patientIdParam && (await canAccessPatient(payload, patientIdParam))
       ? patientIdParam
       : payload.sub
 

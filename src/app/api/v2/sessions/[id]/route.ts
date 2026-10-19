@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/sessions/[id] — full session record (including the angleTimeline
@@ -26,8 +27,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: 'session not found' }, { status: 404 })
   }
 
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
-  if (!isDoctor && payload.sub !== session.patientId) {
+  if (!(await canAccessPatient(payload, session.patientId))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 

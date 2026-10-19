@@ -28,8 +28,15 @@ export function targetLimbToSide(limb: string): Side {
  * majlis game has a target and a session length straight away. Returns null when the clinic
  * has no doctor yet.
  */
-export async function createDefaultPlan(patient: { id: string; affectedSide: string }) {
-  const doctor = await db.user.findFirst({
+export async function createDefaultPlan(
+  patient: { id: string; affectedSide: string; doctorId?: string | null },
+  given?: { id: string; name: string },
+) {
+  // The patient's own doctor first; the clinic's first doctor only for an unlinked patient.
+  const own = !given && patient.doctorId
+    ? await db.user.findUnique({ where: { id: patient.doctorId }, select: { id: true, name: true } })
+    : null
+  const doctor = given ?? own ?? await db.user.findFirst({
     where: { role: 'DOCTOR', active: true },
     orderBy: { createdAt: 'asc' },
     select: { id: true, name: true },
@@ -40,7 +47,7 @@ export async function createDefaultPlan(patient: { id: string; affectedSide: str
     data: {
       patientId: patient.id,
       doctorId: doctor.id,
-      title: 'Starter plan',
+      title: 'خطة البداية',
       targetLimb: sideToTargetLimb(patient.affectedSide),
       ...DEFAULT_PLAN,
     },

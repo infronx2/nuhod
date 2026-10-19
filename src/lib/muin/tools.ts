@@ -27,6 +27,8 @@ export interface PlanProposal {
 export interface ToolContext {
   mode: MuinMode
   patientId: string | null
+  /** The doctor asking (only their patients are listed); null for admins and patients. */
+  doctorId?: string | null
   /** Roster codes (P1, P2...) to patient ids, filled by list_patients. */
   codes: Map<string, { id: string; name: string }>
   proposal: PlanProposal | null
@@ -211,7 +213,7 @@ async function proposePlanChange(patientId: string, args: Record<string, unknown
 /** Every patient as a roster code (P1, P2...) with progress indicators; fills ctx.codes for unmasking. */
 export async function listPatients(ctx: ToolContext) {
   const patients = await db.user.findMany({
-    where: { role: 'PATIENT', active: true },
+    where: { role: 'PATIENT', active: true, ...(ctx.doctorId ? { doctorId: ctx.doctorId } : {}) },
     select: { id: true, name: true, affectedSide: true, dateOfBirth: true },
     orderBy: { createdAt: 'asc' },
     take: 100,

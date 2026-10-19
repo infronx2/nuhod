@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff } from '@/lib/access'
+import { audit } from '@/lib/audit'
+import { PATIENT_EMAIL_DOMAIN } from '@/lib/patient-accounts'
 
 // GET /api/v2/patients/[id] — patient profile + active plan + recent sessions.
-// Doctors can read any patient; patients can read only their own profile.
+// The patient's own doctor (or an admin) and the patient themselves.
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -13,10 +16,11 @@ export async function GET(
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const { id } = await ctx.params
-  const isDoctor = requireRole(payload, 'DOCTOR') || requireRole(payload, 'ADMIN')
-  if (!isDoctor && payload.sub !== id) {
+  const isDoctor = isStaff(payload)
+  if (!(await canAccessPatient(payload, id))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
+  if (isDoctor) await audit(req, { actorId: payload.sub, action: 'patient_viewed', patientId: id })
 
   const user = await db.user.findUnique({
     where: { id },
@@ -30,6 +34,11 @@ export async function GET(
       dateOfBirth: true,
       preferredDialect: true,
       createdAt: true,
+      username: true,
+      active: true,
+      consentSignedAt: true,
+      patientConsentAt: true,
+      _count: { select: { passkeys: true } },
     },
   })
   if (!user) {
@@ -85,7 +94,7 @@ export async function GET(
 
   return NextResponse.json({
     ok: true,
-    patient: user,
+    patient: { ...user, email: user.email.endsWith(`@${PATIENT_EMAIL_DOMAIN}`) ? "" : user.email, passkeys: user._count.passkeys },
     activePlan,
     sessions: recentSessions,
     earnedBadges,

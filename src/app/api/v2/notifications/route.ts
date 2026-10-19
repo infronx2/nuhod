@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * GET /api/v2/notifications?limit=20&userId=X — list notifications.
@@ -15,12 +16,11 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url)
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '30', 10) || 30, 100)
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
   const userIdParam = url.searchParams.get('userId')
   // Resolve the target user: doctors can view any patient's feed; patients
   // can only view their own.
   const targetUserId =
-    userIdParam && (isDoctor || userIdParam === payload.sub)
+    userIdParam && (await canAccessPatient(payload, userIdParam))
       ? userIdParam
       : payload.sub
 

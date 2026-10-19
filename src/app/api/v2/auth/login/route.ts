@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { signToken, verifyPassword } from '@/lib/auth'
+import { verifyPassword } from '@/lib/auth'
+import { audit, clientIp } from '@/lib/audit'
+import { accountKey, addressKey, clearFailures, lockedMinutes, recordFailure } from '@/lib/rate-limit'
+import { signInResponse } from '@/lib/patient-accounts'
 
 // POST /api/v2/auth/login
-// Body: { email, password }
+// Body: { email, password }. "email" may also be a patient's username and "password" their PIN,
+// which is what the clinic game sends when a patient types them into its sign-in screen.
 export async function POST(req: NextRequest) {
   let body: any
   try {
@@ -11,54 +15,35 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: 'invalid JSON' }, { status: 400 })
   }
-  const email = String(body.email || '').trim().toLowerCase()
-  const password = String(body.password || '')
+  const identifier = String(body.email || body.username || '').trim().toLowerCase()
+  const secret = String(body.password || body.pin || '')
 
-  if (!email || !password) {
-    return NextResponse.json(
-      { ok: false, error: 'email and password are required' },
-      { status: 400 },
-    )
+  if (!identifier || !secret) {
+    return NextResponse.json({ ok: false, error: 'email and password are required' }, { status: 400 })
   }
 
-  const user = await db.user.findUnique({ where: { email } })
-  if (!user || !user.passwordHash) {
-    return NextResponse.json(
-      { ok: false, error: 'invalid credentials' },
-      { status: 401 },
-    )
+  const account = accountKey(identifier)
+  const address = addressKey(clientIp(req))
+  const wait = await lockedMinutes(account, address)
+  if (wait > 0) {
+    await audit(req, { action: 'login_locked', detail: identifier })
+    return NextResponse.json({ ok: false, error: 'too many attempts', retryAfterMinutes: wait }, { status: 429 })
   }
-  if (!verifyPassword(password, user.passwordHash)) {
-    return NextResponse.json(
-      { ok: false, error: 'invalid credentials' },
-      { status: 401 },
-    )
+
+  const user = identifier.includes('@')
+    ? await db.user.findUnique({ where: { email: identifier } })
+    : await db.user.findUnique({ where: { username: identifier } })
+  const ok = !!user && (verifyPassword(secret, user.passwordHash) || verifyPassword(secret, user.pinHash))
+  if (!user || !ok) {
+    await recordFailure([account, address])
+    await audit(req, { actorId: user?.id, action: 'login_failed', patientId: user?.role === 'PATIENT' ? user.id : null, detail: identifier })
+    return NextResponse.json({ ok: false, error: 'invalid credentials' }, { status: 401 })
   }
   if (!user.active) {
-    return NextResponse.json(
-      { ok: false, error: 'account disabled' },
-      { status: 403 },
-    )
+    return NextResponse.json({ ok: false, error: 'account disabled' }, { status: 403 })
   }
 
-  const token = signToken({
-    id: user.id,
-    role: user.role,
-    email: user.email,
-    name: user.name,
-  })
-
-  return NextResponse.json({
-    ok: true,
-    token,
-    user: {
-      id: user.id,
-      role: user.role,
-      email: user.email,
-      name: user.name,
-      avatarSeed: user.avatarSeed,
-      preferredDialect: user.preferredDialect,
-      affectedSide: user.affectedSide,
-    },
-  })
+  await clearFailures(account)
+  await audit(req, { actorId: user.id, action: 'login', patientId: user.role === 'PATIENT' ? user.id : null })
+  return NextResponse.json(signInResponse(user))
 }

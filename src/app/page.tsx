@@ -7,6 +7,7 @@ import { Footer } from '@/components/nuhoud/footer'
 import { AuthScreen } from '@/components/nuhoud/auth-screen'
 import { DoctorDashboard } from '@/components/nuhoud/doctor-dashboard'
 import { PatientHome } from '@/components/nuhoud/patient-home'
+import { PatientConsent } from '@/components/nuhoud/patient-consent'
 import { AgentChat } from '@/components/nuhoud/agent-chat'
 import { useAuth, AuthProvider } from '@/hooks/use-auth'
 import { useTranslations, useLocale } from 'next-intl'
@@ -23,7 +24,9 @@ function PatientDashboard() {
     <div className="nm-mesh-bg flex min-h-screen flex-col bg-background">
       <Header />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <PatientHome />
+        <PatientConsent>
+          <PatientHome />
+        </PatientConsent>
       </main>
       <AgentChat variant="compact" />
       <Footer rtl={isRTL} />

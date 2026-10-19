@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 import { runMuin } from '@/lib/muin/agent'
 import type { MuinMode } from '@/lib/muin/tools'
 
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
   if (isDoctor) {
     patientId = body.patientId ? String(body.patientId) : null
     mode = patientId ? 'doctor_patient' : 'doctor_roster'
+    if (patientId && !(await canAccessPatient(payload, patientId))) {
+      return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+    }
   } else {
     if (body.patientId && String(body.patientId) !== payload.sub) {
       return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
@@ -84,7 +88,7 @@ export async function POST(req: NextRequest) {
   const cached = mode === 'doctor_patient' ? null : await cachedAnswer(payload.sub, threadId, patientId, message)
   const result = cached
     ? { reply: cached, toolsUsed: [], proposal: null, source: 'deepseek' as const }
-    : await runMuin({ mode, patientId, history, message, preferArabic, allowModel: await underDailyLimits(payload.sub, isDoctor) })
+    : await runMuin({ mode, patientId, doctorId: role === 'DOCTOR' ? payload.sub : null, history, message, preferArabic, allowModel: await underDailyLimits(payload.sub, isDoctor) })
 
   try {
     await db.chatMessage.createMany({

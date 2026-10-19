@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 import { gameComponents, sessionCodeText } from '@/lib/fhir-session'
 
 /**
@@ -28,8 +29,7 @@ export async function GET(req: NextRequest) {
   if (!patientId) {
     return NextResponse.json({ ok: false, error: 'patientId is required' }, { status: 400 })
   }
-  const isDoctor = payload.role.toUpperCase() === 'DOCTOR' || payload.role.toUpperCase() === 'ADMIN'
-  if (!isDoctor && payload.sub !== patientId) {
+  if (!(await canAccessPatient(payload, patientId))) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
   const days = Math.min(Math.max(parseInt(url.searchParams.get('days') || '30', 10) || 30, 1), 365)

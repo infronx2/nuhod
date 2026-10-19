@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, requireRole } from '@/lib/auth'
+import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
  * DELETE /api/v2/goals/[id] — delete a rehabilitation goal.
@@ -24,6 +25,9 @@ export async function DELETE(
   const goal = await db.rehabGoal.findUnique({ where: { id } })
   if (!goal) {
     return NextResponse.json({ ok: false, error: 'goal not found' }, { status: 404 })
+  }
+  if (!(await canAccessPatient(payload, goal.patientId))) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
 
   await db.rehabGoal.delete({ where: { id } })

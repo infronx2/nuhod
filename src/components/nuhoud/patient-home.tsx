@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/hooks/use-auth'
+import { FaceIdCard } from '@/components/nuhoud/face-id-card'
 import type { V2PatientDetail, V2Session } from '@/lib/v2-types'
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -196,6 +197,8 @@ export function PatientHome() {
           </>
         )}
       </Card>
+
+      <FaceIdCard />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <Card className="border-border/40 bg-card/70 p-5 lg:col-span-3">

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { signToken, hashPassword } from '@/lib/auth'
-import { DEFAULT_PLAN, createDefaultPlan, parseSide } from '@/lib/plans'
 
 // POST /api/v2/auth/register
 // Body: { email, name, password, role?: "PATIENT"|"DOCTOR", affectedSide?: "right"|"left"|"bilateral",
@@ -18,7 +17,6 @@ export async function POST(req: NextRequest) {
   const name = String(body.name || '').trim()
   const password = String(body.password || '')
   const role = String(body.role || 'PATIENT').toUpperCase() === 'DOCTOR' ? 'DOCTOR' : 'PATIENT'
-  const affectedSide = parseSide(body.affectedSide) ?? 'right'
 
   if (!email || !name || !password) {
     return NextResponse.json(
@@ -33,7 +31,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // A doctor sees every patient's records, so doctor sign-up needs the clinic's invite code.
+  // Patients are added by the doctor who follows them (Doctor → Add patient), which links the two
+  // and records consent; there is no self sign-up for patients.
+  if (role === 'PATIENT') {
+    return NextResponse.json(
+      { ok: false, error: 'patients are added by their doctor' },
+      { status: 403 },
+    )
+  }
+
+  // Doctor sign-up needs the clinic's invite code.
   if (role === 'DOCTOR') {
     const invite = process.env.NUHOUD_DOCTOR_INVITE_CODE
     if (!invite || String(body.inviteCode || '').trim() !== invite) {
@@ -61,30 +68,8 @@ export async function POST(req: NextRequest) {
       role,
       passwordHash: hashPassword(password),
       avatarSeed,
-      ...(role === 'PATIENT' ? { affectedSide } : {}),
     },
   })
-
-  if (role === 'PATIENT') {
-    try {
-      const created = await createDefaultPlan(user)
-      if (created) {
-        const { createNotification } = await import('@/lib/notifications')
-        await createNotification({
-          userId: created.doctor.id,
-          type: 'info',
-          title: `New patient: ${user.name}`,
-          body: `Starter plan: ${DEFAULT_PLAN.targetAngle}° target, ${DEFAULT_PLAN.dailyRepGoal} tasks a day. Review it in the roster.`,
-          severity: 'info',
-          linkType: 'patient',
-          linkId: user.id,
-        })
-      }
-    } catch (err) {
-      // The account exists either way; the doctor can still prescribe a plan by hand.
-      console.error('[register] starter plan failed', err)
-    }
-  }
 
   const token = signToken({
     id: user.id,

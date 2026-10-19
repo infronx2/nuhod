@@ -2,8 +2,16 @@
   "buildCommand": "prisma generate && next build",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["dub1"],
+  "regions": [
+    "dub1"
+  ],
   "env": {
     "NEXTAUTH_URL": "https://nuhoud.vercel.app"
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v2/health",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

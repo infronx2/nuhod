@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { publicUser } from '@/lib/patient-accounts'
 
 // GET /api/v2/auth/me — returns the current authenticated user.
 export async function GET(req: NextRequest) {
@@ -12,17 +13,5 @@ export async function GET(req: NextRequest) {
   if (!user || !user.active) {
     return NextResponse.json({ ok: false, error: 'user not found' }, { status: 404 })
   }
-  return NextResponse.json({
-    ok: true,
-    user: {
-      id: user.id,
-      role: user.role,
-      email: user.email,
-      name: user.name,
-      avatarSeed: user.avatarSeed,
-      preferredDialect: user.preferredDialect,
-      affectedSide: user.affectedSide,
-      dateOfBirth: user.dateOfBirth,
-    },
-  })
+  return NextResponse.json({ ok: true, user: publicUser(user) })
 }

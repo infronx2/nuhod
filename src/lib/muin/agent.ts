@@ -37,6 +37,8 @@ export async function runMuin(input: {
   preferArabic: boolean
   /** False when the user is over the daily model limit: answer from the data only. */
   allowModel?: boolean
+  /** The doctor asking; their roster is only the patients they follow (null for admins). */
+  doctorId?: string | null
 }): Promise<MuinResult> {
   const { mode, patientId, message } = input
   const arabic = isArabicText(message) || (input.preferArabic && !/[a-z]{3,}/i.test(message))
@@ -53,7 +55,7 @@ export async function runMuin(input: {
   })
   if (input.allowModel === false) return fallback()
 
-  const ctx: ToolContext = { mode, patientId, codes: new Map(), proposal: null }
+  const ctx: ToolContext = { mode, patientId, doctorId: input.doctorId ?? null, codes: new Map(), proposal: null }
   const data = await contextData(ctx)
   const messages: LlmMessage[] = [
     { role: 'system', content: INSTRUCTIONS[mode] },
