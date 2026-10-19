@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   try {
     await db.$queryRawUnsafe('select 1')
-    return NextResponse.json({ ok: true, db: 'up' })
+    return NextResponse.json({ ok: true, db: 'up', commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null })
   } catch {
     return NextResponse.json({ ok: false, db: 'down' }, { status: 503 })
   }
