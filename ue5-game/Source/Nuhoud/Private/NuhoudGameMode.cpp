@@ -1,4 +1,4 @@
-#include "NuhoudGameMode.h"
+﻿#include "NuhoudGameMode.h"
 #include "NuhoudGameInstance.h"
 #include "NuhoudPlayerController.h"
 #include "NuhoudInputAdapter.h"
@@ -8,6 +8,8 @@
 #include "NuhoudFirstPersonPawn.h"
 #include "NuhoudTaskDirector.h"
 #include "NuhoudHeadset.h"
+#include "NuhoudUI.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Engine/World.h"
 #include "Misc/CommandLine.h"
 #include "TimerManager.h"
@@ -60,7 +62,7 @@ void ANuhoudGameMode::BeginPlay()
 
 	if (GI && GI->IsSignedIn())
 	{
-		StartGameAfterLogin();
+		AskBeforeSession();
 	}
 	else
 	{
@@ -96,7 +98,58 @@ void ANuhoudGameMode::ShowLoginScreen()
 void ANuhoudGameMode::OnLoginSuccess(const FString& PatientId, const FString& AuthToken)
 {
 	FTimerHandle Handle;
-	GetWorldTimerManager().SetTimer(Handle, this, &ANuhoudGameMode::StartGameAfterLogin, 1.0f, false);
+	GetWorldTimerManager().SetTimer(Handle, this, &ANuhoudGameMode::AskBeforeSession, 1.0f, false);
+}
+
+void ANuhoudGameMode::AskBeforeSession()
+{
+	if (LoginWidget)
+	{
+		LoginWidget->RemoveFromParent();
+		LoginWidget = nullptr;
+	}
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (PC)
+	{
+		PC->SetShowMouseCursor(true);
+		PC->SetInputMode(FInputModeUIOnly());
+	}
+
+	TWeakObjectPtr<ANuhoudGameMode> WeakThis(this);
+	NuhoudUI::AskCheck(GetWorld()->GetGameViewport(), true, [WeakThis](int32 Pain, int32 Fatigue)
+	{
+		if (!WeakThis.IsValid()) return;
+		WeakThis->PainBefore = Pain;
+		WeakThis->FatigueBefore = Fatigue;
+		UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(WeakThis->GetGameInstance());
+		if (!GI)
+		{
+			WeakThis->StartGameAfterLogin();
+			return;
+		}
+		GI->SendCheckin(Pain, Fatigue, [WeakThis, Pain](bool bAllowed)
+		{
+			if (!WeakThis.IsValid()) return;
+			if (bAllowed)
+			{
+				WeakThis->StartGameAfterLogin();
+				return;
+			}
+			// High pain or very tired: no session today. The server has told the doctor.
+			NuhoudUI::ShowMessage(WeakThis->GetWorld()->GetGameViewport(), TEXT("خلنا نرتاح اليوم"),
+				Pain >= 7
+					? TEXT("الألم عالي اليوم، والتمرين ممكن يزيده. وصلت ملاحظتك لطبيبك. إذا الألم قوي أو جديد، كلّم طبيبك أو الطوارئ.")
+					: TEXT("جسمك محتاج راحة اليوم. وصلت ملاحظتك لطبيبك."),
+				TEXT("إغلاق"),
+				[WeakThis]()
+				{
+					if (WeakThis.IsValid())
+					{
+						UKismetSystemLibrary::QuitGame(WeakThis.Get(), WeakThis->GetWorld()->GetFirstPlayerController(), EQuitPreference::Quit, false);
+					}
+				});
+		});
+	});
 }
 
 void ANuhoudGameMode::StartGameAfterLogin()
@@ -121,6 +174,8 @@ void ANuhoudGameMode::StartGameAfterLogin()
 	if (GI)
 	{
 		GI->ResetSession();
+		GI->PainBefore = PainBefore;
+		GI->FatigueBefore = FatigueBefore;
 		// Sessions saved on this computer while offline go to the doctor now that the patient is signed in.
 		GI->UploadPendingSessions();
 		if (GI->TrackingMode == ENuhoudTrackingMode::Headset)

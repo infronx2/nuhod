@@ -1,4 +1,4 @@
-#include "NuhoudGameInstance.h"
+﻿#include "NuhoudGameInstance.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -32,6 +32,7 @@ namespace
 
 	// Used until the doctor's plan arrives, and when the patient has none: the clinic's starter plan.
 	constexpr float DefaultTargetAngle = 45.f;
+	constexpr int32 DefaultMaxMinutes = 20;
 }
 
 UNuhoudGameInstance::UNuhoudGameInstance()
@@ -44,6 +45,7 @@ UNuhoudGameInstance::UNuhoudGameInstance()
 	PlanTargetAngle = DefaultTargetAngle;
 	PlanDailyTasks = 0;
 	PlanLimb = ENuhoudPlanLimb::Both;
+	PlanMaxMinutes = DefaultMaxMinutes;
 	bPlanFromDoctor = false;
 	RetryRound = 0;
 	ResetSession();
@@ -101,6 +103,9 @@ void UNuhoudGameInstance::FetchActivePlan(TFunction<void()> OnDone)
 				(*Active)->TryGetNumberField(TEXT("targetAngle"), Angle);
 				(*Active)->TryGetNumberField(TEXT("dailyRepGoal"), Tasks);
 				(*Active)->TryGetStringField(TEXT("targetLimb"), Limb);
+				double MaxMinutes = DefaultMaxMinutes;
+				(*Active)->TryGetNumberField(TEXT("maxSessionMinutes"), MaxMinutes);
+				GI->PlanMaxMinutes = FMath::Clamp(FMath::RoundToInt(MaxMinutes), 5, 60);
 				GI->PlanTargetAngle = FMath::Clamp(static_cast<float>(Angle), 20.f, 160.f);
 				GI->PlanDailyTasks = FMath::Clamp(FMath::RoundToInt(Tasks), 0, 200);
 				GI->PlanLimb = Limb.Contains(TEXT("left")) ? ENuhoudPlanLimb::Left
@@ -140,6 +145,36 @@ FString UNuhoudGameInstance::LocalSessionsDir()
 	return FPaths::ProjectSavedDir() / TEXT("LocalSessions");
 }
 
+void UNuhoudGameInstance::SendCheckin(int32 Pain, int32 Fatigue, TFunction<void(bool bAllowed)> OnResult)
+{
+	// The same rule the server uses, for when it cannot be reached.
+	const bool bLocalAllowed = Pain < 7 && Fatigue < 2;
+	if (!IsSignedIn() || Pain < 0)
+	{
+		OnResult(bLocalAllowed);
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(CloudBackendURL / TEXT("checkins"));
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *CloudAuthToken));
+	Request->SetTimeout(PlanTimeoutSeconds);
+	Request->SetContentAsString(FString::Printf(TEXT("{\"pain\":%d,\"fatigue\":%d}"), Pain, FMath::Max(Fatigue, 0)));
+	Request->OnProcessRequestComplete().BindLambda([OnResult, bLocalAllowed](FHttpRequestPtr, FHttpResponsePtr Response, bool bOk)
+	{
+		bool bAllowed = bLocalAllowed;
+		TSharedPtr<FJsonObject> Json;
+		if (bOk && Response.IsValid() && Response->GetResponseCode() == 200
+			&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid())
+		{
+			Json->TryGetBoolField(TEXT("allowed"), bAllowed);
+		}
+		OnResult(bAllowed);
+	});
+	Request->ProcessRequest();
+}
+
 void UNuhoudGameInstance::ResetSession()
 {
 	SessionScore = 0;
@@ -162,6 +197,9 @@ void UNuhoudGameInstance::ResetSession()
 	AngleSampleCount = 0;
 	SessionMaxElbowROM = 0.f;
 	bEndedByPainStop = false;
+	PainBefore = -1;
+	FatigueBefore = -1;
+	PainAfter = -1;
 	AngleTimeline.Reset();
 	TimelineInterval = TimelineBaseInterval;
 	TimelineLastSample = SessionStartSeconds;
@@ -275,6 +313,9 @@ TSharedRef<FJsonObject> UNuhoudGameInstance::BuildSessionPayload(float DurationS
 	Body->SetNumberField(TEXT("pinchCount"), SessionPinchCount);
 	Body->SetNumberField(TEXT("tasksAssisted"), SessionAssisted);
 	Body->SetBoolField(TEXT("painStop"), bEndedByPainStop);
+	if (PainBefore >= 0) Body->SetNumberField(TEXT("painBefore"), PainBefore);
+	if (FatigueBefore >= 0) Body->SetNumberField(TEXT("fatigueBefore"), FatigueBefore);
+	if (PainAfter >= 0) Body->SetNumberField(TEXT("painAfter"), PainAfter);
 
 	TArray<TSharedPtr<FJsonValue>> Timeline;
 	Timeline.Reserve(AngleTimeline.Num());
@@ -290,8 +331,8 @@ void UNuhoudGameInstance::SyncSessionToCloud()
 {
 	if (bSessionSynced) return;
 
-	const float Duration = FPlatformTime::Seconds() - SessionStartSeconds;
-	if (SessionAttempts == 0 && Duration < 60.f && !bEndedByPainStop)
+	const float Duration = SessionSeconds();
+	if (!IsWorthSaving())
 	{
 		UE_LOG(LogTemp, Log, TEXT("Nuhoud: nothing to save yet (%.0fs, no tasks)."), Duration);
 		return;
@@ -316,11 +357,11 @@ void UNuhoudGameInstance::SyncSessionToCloud()
 
 	if (!IsSignedIn())
 	{
-		LastSyncMessage = TEXT("Saved on this computer - sign in to send it to your doctor");
+		LastSyncMessage = TEXT("انحفظت الجلسة في هذا الجهاز، وبتوصل لطبيبك لما تسجّل دخولك");
 		UE_LOG(LogTemp, Warning, TEXT("Nuhoud: not signed in, session kept locally."));
 		return;
 	}
-	LastSyncMessage = TEXT("Saving session...");
+	LastSyncMessage = TEXT("نحفظ الجلسة…");
 	UploadSessionFile(CurrentSessionFile);
 }
 
@@ -394,7 +435,7 @@ void UNuhoudGameInstance::OnUploadFinished(const FString& Path, int32 Code, cons
 		RetryRound = 0;
 		UE_LOG(LogTemp, Log, TEXT("Nuhoud: session sync saved (HTTP %d) %s%s"), Code, *Name,
 			ResponseBody.Contains(TEXT("\"duplicate\":true")) ? TEXT(" (already on the server)") : TEXT(""));
-		if (bCurrent) LastSyncMessage = TEXT("Session saved - your doctor can see it now");
+		if (bCurrent) LastSyncMessage = TEXT("انحفظت الجلسة ووصلت لطبيبك");
 		return;
 	}
 
@@ -404,7 +445,7 @@ void UNuhoudGameInstance::OnUploadFinished(const FString& Path, int32 Code, cons
 		const FString Rejected = LocalSessionsDir() / TEXT("Rejected") / Name;
 		IFileManager::Get().Move(*Rejected, *Path);
 		UE_LOG(LogTemp, Error, TEXT("Nuhoud: session sync FAILED (HTTP %d), moved to %s: %s"), Code, *Rejected, *ResponseBody.Left(300));
-		if (bCurrent) LastSyncMessage = FString::Printf(TEXT("Session could not be saved (error %d)"), Code);
+		if (bCurrent) LastSyncMessage = FString::Printf(TEXT("ما قدرنا نحفظ الجلسة (خطأ %d)"), Code);
 		return;
 	}
 
@@ -413,8 +454,8 @@ void UNuhoudGameInstance::OnUploadFinished(const FString& Path, int32 Code, cons
 	if (bCurrent)
 	{
 		LastSyncMessage = Code == 401
-			? FString(TEXT("Saved on this computer - sign in again to send it to your doctor"))
-			: FString(TEXT("No connection - saved on this computer, it will be sent automatically"));
+			? FString(TEXT("انحفظت في هذا الجهاز. سجّل دخولك مرة ثانية عشان توصل لطبيبك"))
+			: FString(TEXT("ما فيه اتصال. انحفظت في هذا الجهاز وبتنرسل تلقائياً"));
 	}
 	if (Code != 401) ScheduleRetry();
 }

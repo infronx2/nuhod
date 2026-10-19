@@ -6,7 +6,7 @@ import { createDefaultPlan, isTargetLimb, sideToTargetLimb, targetLimbToSide } f
 
 // POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient (the new plan
 // replaces the active one). Body: { title?, targetLimb?: "upper_right"|"upper_left"|"bilateral",
-// targetAngle?, sessionsPerWeek?, dailyRepGoal?, notes? }
+// targetAngle?, sessionsPerWeek?, dailyRepGoal?, maxSessionMinutes?, notes? }
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
@@ -45,6 +45,7 @@ export async function POST(
       targetAngle: clampInt(body.targetAngle, 0, 180, 90),
       sessionsPerWeek: clampInt(body.sessionsPerWeek, 1, 14, 5),
       dailyRepGoal: clampInt(body.dailyRepGoal, 1, 200, 20),
+      maxSessionMinutes: clampInt(body.maxSessionMinutes, 5, 60, 20),
       notes: body.notes ? String(body.notes).slice(0, 1000) : null,
       // Deactivate previous active plans for this patient so only one is live.
     },

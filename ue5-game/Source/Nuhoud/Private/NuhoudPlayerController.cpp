@@ -1,4 +1,4 @@
-#include "NuhoudPlayerController.h"
+﻿#include "NuhoudPlayerController.h"
 #include "NuhoudGameInstance.h"
 #include "NuhoudGameMode.h"
 #include "NuhoudMajlis.h"
@@ -12,7 +12,10 @@
 #include "Engine/World.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
-#include "Components/TextRenderComponent.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetComponent.h"
+#include "NuhoudHudWidget.h"
+#include "NuhoudUI.h"
 #include "Dom/JsonObject.h"
 #include "Misc/CommandLine.h"
 #include "Serialization/JsonReader.h"
@@ -53,11 +56,11 @@ namespace
 
 	FString GestureLabel(const FString& Gesture)
 	{
-		if (Gesture == TEXT("open")) return TEXT("OPEN HAND");
-		if (Gesture == TEXT("fist")) return TEXT("FIST");
-		if (Gesture == TEXT("point")) return TEXT("POINTING");
-		if (Gesture == TEXT("peace")) return TEXT("PEACE");
-		if (Gesture == TEXT("pinch")) return TEXT("PINCH");
+		if (Gesture == TEXT("open")) return TEXT("يد مفتوحة");
+		if (Gesture == TEXT("fist")) return TEXT("قبضة");
+		if (Gesture == TEXT("point")) return TEXT("إشارة");
+		if (Gesture == TEXT("peace")) return TEXT("علامة النصر");
+		if (Gesture == TEXT("pinch")) return TEXT("قرصة");
 		return TEXT("");
 	}
 }
@@ -73,6 +76,7 @@ ANuhoudPlayerController::ANuhoudPlayerController()
 	bBodyDetected = false;
 	TrackingFps = 0.f;
 	PainStopActor = nullptr;
+	Hud = nullptr;
 	ScoreText = nullptr;
 	StatusText = nullptr;
 	GestureText = nullptr;
@@ -120,10 +124,15 @@ void ANuhoudPlayerController::InitializeAfterLogin()
 
 void ANuhoudPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// Closing the game or stopping Play still saves the session for the doctor.
+	// Closing the game or stopping Play still saves the session for the doctor, even if the
+	// question after the session was never answered.
 	if (bGameInitialized && !bSessionEnded)
 	{
 		EndSession();
+	}
+	if (UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		GI->SyncSessionToCloud();
 	}
 	CloseWebSocket();
 	RetiredSocket.Reset();
@@ -419,8 +428,8 @@ void ANuhoudPlayerController::Tick(float DeltaTime)
 		const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
 		if (InstructionText && GI)
 		{
-			InstructionText->SetText(FText::FromString(GI->LastSyncMessage.IsEmpty()
-				? FString(TEXT("Session finished. Rest your arm.")) : GI->LastSyncMessage));
+			const FString Done = bEndedByTimeLimit ? TEXT("خلص وقت جلسة اليوم، أحسنت. ريّح يدك") : TEXT("خلصت الجلسة. ريّح يدك");
+			InstructionText->SetText(FText::FromString(GI->LastSyncMessage.IsEmpty() ? Done : GI->LastSyncMessage));
 		}
 		return;
 	}
@@ -434,6 +443,18 @@ void ANuhoudPlayerController::Tick(float DeltaTime)
 		return;
 	}
 #endif
+
+	// The plan's time limit: the patient rests rather than keeps going.
+	if (const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
+	{
+		if (GI->PlanMaxMinutes > 0 && GI->SessionSeconds() >= GI->PlanMaxMinutes * 60.0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("Nuhoud: session reached the plan's %d minutes"), GI->PlanMaxMinutes);
+			bEndedByTimeLimit = true;
+			EndSession();
+			return;
+		}
+	}
 
 	ConnectionAnimTimer += DeltaTime;
 	UpdatePoseLink(DeltaTime);
@@ -455,8 +476,8 @@ void ANuhoudPlayerController::UpdateStatusHUD()
 		const FString Tasks = GI->PlanDailyTasks > 0
 			? FString::Printf(TEXT("%d/%d"), GI->SessionReps, GI->PlanDailyTasks)
 			: FString::FromInt(GI->SessionReps);
-		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("SCORE %d   |   STREAK %d   |   TASKS %s   |   Esc: finish"),
-			GI->SessionScore, GI->SessionStreak, *Tasks)));
+		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("المهام %s   ·   النقاط %d   ·   Esc للإنهاء"),
+			*Tasks, GI->SessionScore)));
 	}
 
 	FString CameraProblem;
@@ -467,22 +488,22 @@ void ANuhoudPlayerController::UpdateStatusHUD()
 		{
 		case EPoseLink::Connecting:
 		case EPoseLink::Idle:
-			CameraProblem = TEXT("Connecting to camera") + FString::ChrN((int32)ConnectionAnimTimer % 4, TEXT('.'));
-			CameraFix = TEXT("Start the pose server: python pose_server.py");
+			CameraProblem = TEXT("نتصل بالكاميرا") + FString::ChrN((int32)ConnectionAnimTimer % 4, TEXT('.'));
+			CameraFix = TEXT("شغّل خادم التتبع: python pose_server.py");
 			break;
 		case EPoseLink::WaitingToRetry:
-			CameraProblem = FString::Printf(TEXT("Camera connection lost - reconnecting (%d of %d)"), PoseRetries, MaxPoseReconnects);
-			CameraFix = TEXT("Start the pose server: python pose_server.py");
+			CameraProblem = FString::Printf(TEXT("انقطع اتصال الكاميرا، نعيد المحاولة (%d من %d)"), PoseRetries, MaxPoseReconnects);
+			CameraFix = TEXT("شغّل خادم التتبع: python pose_server.py");
 			break;
 		case EPoseLink::GaveUp:
-			CameraProblem = TEXT("Camera not connected");
-			CameraFix = TEXT("Start the pose server (python pose_server.py), then press R");
+			CameraProblem = TEXT("الكاميرا غير متصلة");
+			CameraFix = TEXT("شغّل خادم التتبع (python pose_server.py) وبعدين اضغط R");
 			break;
 		case EPoseLink::Connected:
 			if (!bCameraStreaming)
 			{
-				CameraProblem = TEXT("The camera is not sending video");
-				CameraFix = TEXT("Check the phone camera app and its connection");
+				CameraProblem = TEXT("الكاميرا ما ترسل صورة");
+				CameraFix = TEXT("تأكد من تطبيق الكاميرا في الجوال واتصاله");
 			}
 			break;
 		}
@@ -494,23 +515,23 @@ void ANuhoudPlayerController::UpdateStatusHUD()
 		if (!CameraProblem.IsEmpty())
 		{
 			Status = CameraProblem;
-			StatusText->SetTextRenderColor(FColor(255, 150, 50));
+			StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(FColor(255, 150, 50))));
 		}
 		else if (!bRight && !bLeft)
 		{
-			Status = bHeadsetHands || bBodyDetected ? TEXT("Raise your hands in front of you") : TEXT("Sit facing the camera");
-			StatusText->SetTextRenderColor(FColor(255, 200, 50));
+			Status = bHeadsetHands || bBodyDetected ? TEXT("ارفع يديك قدامك") : TEXT("اجلس مقابل الكاميرا");
+			StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(FColor(255, 200, 50))));
 		}
 		else
 		{
 			auto Side = [this](ENuhoudHandSide S, const TCHAR* Label) -> FString
 			{
-				if (!InputAdapter->IsHandVisible(S)) return FString::Printf(TEXT("%s  --"), Label);
+				if (!InputAdapter->IsHandVisible(S)) return FString::Printf(TEXT("%s: —"), Label);
 				const FNuhoudArmSample& A = InputAdapter->GetArmSample(S);
-				return FString::Printf(TEXT("%s  shoulder %.0f  %s"), Label, A.ShoulderElevation, *InputAdapter->DescribeGrip(S));
+				return FString::Printf(TEXT("%s: الكتف %.0f°"), Label, A.ShoulderElevation);
 			};
-			Status = Side(ENuhoudHandSide::Right, TEXT("R")) + TEXT("     ") + Side(ENuhoudHandSide::Left, TEXT("L"));
-			StatusText->SetTextRenderColor(FColor(80, 255, 210));
+			Status = Side(ENuhoudHandSide::Right, TEXT("اليمنى")) + TEXT("      ") + Side(ENuhoudHandSide::Left, TEXT("اليسرى"));
+			StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(FColor(80, 255, 210))));
 		}
 		StatusText->SetText(FText::FromString(Status));
 	}
@@ -530,7 +551,7 @@ void ANuhoudPlayerController::UpdateStatusHUD()
 
 		FString Instruction;
 		if (!CameraFix.IsEmpty()) Instruction = CameraFix;
-		else if (!bRight && !bLeft && TaskLine.IsEmpty()) Instruction = TEXT("Your hands will appear as you lift them");
+		else if (!bRight && !bLeft && TaskLine.IsEmpty()) Instruction = TEXT("بتظهر يداك لما ترفعهما");
 		else Instruction = TaskLine;
 		InstructionText->SetText(FText::FromString(Instruction));
 	}
@@ -566,12 +587,24 @@ void ANuhoudPlayerController::EndSession()
 	{
 		GM->GetDirector()->EndSession();
 	}
-	if (UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
-	{
-		GI->SyncSessionToCloud();
-	}
 	CloseWebSocket();
 	SetPoseLink(EPoseLink::Idle);
+
+	// Ask how the pain is now, then save. A session too short to keep is not asked about.
+	UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
+	if (!GI) return;
+	if (!GI->IsWorthSaving() || GetWorld()->bIsTearingDown)
+	{
+		GI->SyncSessionToCloud();
+		return;
+	}
+	TWeakObjectPtr<UNuhoudGameInstance> WeakGI(GI);
+	NuhoudUI::AskCheck(GetWorld()->GetGameViewport(), false, [WeakGI](int32 Pain, int32)
+	{
+		if (!WeakGI.IsValid()) return;
+		WeakGI->PainAfter = Pain;
+		WeakGI->SyncSessionToCloud();
+	});
 }
 
 void ANuhoudPlayerController::SpawnPainStopButton()
@@ -598,32 +631,41 @@ void ANuhoudPlayerController::SpawnPainStopButton()
 
 void ANuhoudPlayerController::SpawnStatusHUD()
 {
+	// -NuhoudCinematic: a clean picture for filming, without the status text or the mouse cursor.
+	if (FParse::Param(FCommandLine::Get(), TEXT("NuhoudCinematic")))
+	{
+		SetShowMouseCursor(false);
+		return;
+	}
+
 	const ANuhoudFirstPersonPawn* PatientPawn = Cast<ANuhoudFirstPersonPawn>(GetPawn());
 	if (!PatientPawn) return;
 	const FTransform Body = PatientPawn->GetBodyFrame();
 	const FRotator Facing(0.f, Body.Rotator().Yaw + 180.f, 0.f);
 
-	auto MakeText = [this, &Body, &Facing](const FVector& Local, float Size, const FColor& Color) -> UTextRenderComponent*
-	{
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AActor* A = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
-		if (!A) return nullptr;
+	// One panel about 2.6 m ahead, at and just above eye level so reach targets below stay clear.
+	// A widget component rather than text render components: those cannot shape Arabic.
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AActor* Panel = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
+	if (!Panel) return;
 
-		UTextRenderComponent* TRC = NewObject<UTextRenderComponent>(A, TEXT("Text"));
-		A->SetRootComponent(TRC);
-		TRC->RegisterComponent();
-		TRC->SetWorldSize(Size);
-		TRC->SetTextRenderColor(Color);
-		TRC->SetHorizontalAlignment(EHTA_Center);
-		TRC->SetVerticalAlignment(EVRTA_TextCenter);
-		A->SetActorLocationAndRotation(Body.TransformPosition(Local), Facing);
-		return TRC;
-	};
+	Hud = CreateWidget<UNuhoudHudWidget>(this, UNuhoudHudWidget::StaticClass());
+	UWidgetComponent* Widget = NewObject<UWidgetComponent>(Panel, TEXT("Hud"));
+	Panel->SetRootComponent(Widget);
+	Widget->SetWidgetSpace(EWidgetSpace::World);
+	Widget->SetDrawSize(FVector2D(1600.f, 520.f));
+	Widget->SetPivot(FVector2D(0.5f, 0.5f));
+	Widget->SetBlendMode(EWidgetBlendMode::Transparent);
+	Widget->SetTwoSided(true);
+	Widget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Widget->SetWidget(Hud);
+	Widget->RegisterComponent();
+	Panel->SetActorLocationAndRotation(Body.TransformPosition(FVector(260.f, 0.f, 6.f)), Facing);
+	Panel->SetActorScale3D(FVector(0.09f));
 
-	// About 2.6 m ahead, at and just above eye level so reach targets below stay unobstructed.
-	ScoreText = MakeText(FVector(260.f, 0.f, 18.f), 9.f, FColor(255, 215, 90));
-	StatusText = MakeText(FVector(260.f, 0.f, 9.f), 7.f, FColor(80, 255, 210));
-	GestureText = MakeText(FVector(260.f, 0.f, 1.f), 9.f, FColor(255, 230, 150));
-	InstructionText = MakeText(FVector(260.f, 0.f, -7.f), 6.5f, FColor(220, 220, 255));
+	ScoreText = Hud->Score;
+	StatusText = Hud->Status;
+	GestureText = Hud->Gesture;
+	InstructionText = Hud->Instruction;
 }

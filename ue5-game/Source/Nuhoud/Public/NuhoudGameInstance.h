@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/GameInstance.h"
@@ -59,6 +59,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
 	ENuhoudPlanLimb PlanLimb;
+
+	/** The longest a session may run, from the plan (minutes). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
+	int32 PlanMaxMinutes;
 
 	/** False while the defaults are in use (no plan, or it could not be loaded). */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Plan")
@@ -127,6 +131,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Session")
 	bool bEndedByPainStop;
 
+	/** Answers to the questions before and after the session: pain 0-10, tiredness 0-2; -1 if not asked. */
+	int32 PainBefore;
+	int32 FatigueBefore;
+	int32 PainAfter;
+
 	/** Short status of the last cloud save, shown to the patient. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Nuhoud|Cloud")
 	FString LastSyncMessage;
@@ -144,6 +153,15 @@ public:
 	void UpdateMaxAngle(float Angle);
 	void UpdateElbowAngle(float Angle);
 	void MarkPainStop() { bEndedByPainStop = true; }
+	double SessionSeconds() const { return FPlatformTime::Seconds() - SessionStartSeconds; }
+	/** Whether the session is long enough to keep (anything tried, a pain stop, or a minute played). */
+	bool IsWorthSaving() const { return SessionAttempts > 0 || bEndedByPainStop || SessionSeconds() >= 60.0; }
+
+	/**
+	 * Sends the answers before a session; the server tells the doctor when the patient should rest.
+	 * OnResult gets whether the session may start (decided here with the same rule when offline).
+	 */
+	void SendCheckin(int32 Pain, int32 Fatigue, TFunction<void(bool bAllowed)> OnResult);
 
 	/**
 	 * Saves the finished session to Saved/LocalSessions, then sends it to the doctor's dashboard.

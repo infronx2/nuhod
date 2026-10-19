@@ -1,4 +1,4 @@
-#include "NuhoudTaskDirector.h"
+﻿#include "NuhoudTaskDirector.h"
 #include "NuhoudLantern.h"
 #include "NuhoudTargetMarker.h"
 #include "NuhoudMajlis.h"
@@ -118,11 +118,11 @@ void ANuhoudTaskDirector::StartSession(ANuhoudInputAdapter* InInputAdapter)
 	// Tell the patient what today's plan asks for before the first task appears.
 	if (const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance()))
 	{
-		const TCHAR* Hand = GI->PlanLimb == ENuhoudPlanLimb::Right ? TEXT("your right hand")
-			: GI->PlanLimb == ENuhoudPlanLimb::Left ? TEXT("your left hand") : TEXT("either hand");
+		const TCHAR* Hand = GI->PlanLimb == ENuhoudPlanLimb::Right ? TEXT("بيدك اليمنى")
+			: GI->PlanLimb == ENuhoudPlanLimb::Left ? TEXT("بيدك اليسرى") : TEXT("بأي يد");
 		Feedback = GI->PlanDailyTasks > 0
-			? FString::Printf(TEXT("Today: %d tasks with %s"), GI->PlanDailyTasks, Hand)
-			: FString::Printf(TEXT("Today: as many tasks as you like, with %s"), Hand);
+			? FString::Printf(TEXT("هدف اليوم: %d مهام %s"), GI->PlanDailyTasks, Hand)
+			: FString::Printf(TEXT("اليوم: مهام بدون حد، %s"), Hand);
 		FeedbackTime = 4.f;
 	}
 	if (Voice) Voice->Say(TEXT("session_start"));
@@ -281,7 +281,7 @@ void ANuhoudTaskDirector::CompleteTask(int32 Points, const FString& Message)
 	const UNuhoudGameInstance* GI = Cast<UNuhoudGameInstance>(GetGameInstance());
 	if (GI && GI->PlanDailyTasks > 0 && GI->SessionReps >= GI->PlanDailyTasks)
 	{
-		Feedback = FString::Printf(TEXT("Today's goal is done: %d tasks. Well done!"), GI->SessionReps);
+		Feedback = FString::Printf(TEXT("خلصت هدف اليوم: %d مهام. أحسنت!"), GI->SessionReps);
 		FeedbackTime = 6.f;
 		if (Voice) Voice->Say(TEXT("goal_reached"), true);
 		UE_LOG(LogTemp, Log, TEXT("Nuhoud: daily goal of %d tasks reached, finishing the session"), GI->PlanDailyTasks);
@@ -310,7 +310,7 @@ void ANuhoudTaskDirector::FailTask()
 	{
 		Difficulty = FMath::Max(0.f, Difficulty - 0.15f);
 	}
-	Feedback = TEXT("Let's try a different one");
+	Feedback = TEXT("ولا يهمك، نجرب وحدة ثانية");
 	FeedbackTime = 2.f;
 	if (Voice) Voice->Say(TEXT("task_fail"), true);
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: task %d failed after %.1fs, difficulty %.2f"), TaskCount, TaskTime, Difficulty);
@@ -417,7 +417,7 @@ void ANuhoudTaskDirector::HangLanternOnHook(bool bAssisted)
 	Lantern->PlaceAt(FTransform(Upright, Marker->GetActorLocation() - Upright.RotateVector(Lantern->GetGrabAnchorLocal())));
 	Lantern->LightUp();
 	Marker->Celebrate();
-	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("Beautiful! The majlis glows brighter"));
+	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("أحسنت! المجلس صار أنور"));
 
 	TWeakObjectPtr<ANuhoudLantern> WeakLantern(Lantern);
 	TWeakObjectPtr<ANuhoudTargetMarker> WeakMarker(Marker);
@@ -436,7 +436,7 @@ void ANuhoudTaskDirector::OnLanternTouchLit(ANuhoudLantern* Lantern)
 	TaskLantern = nullptr;
 	TaskMarker = nullptr;
 	if (Marker) Marker->Celebrate();
-	CompleteTask(AssistedPoints, TEXT("It's lit! Next time try closing your hand around it"));
+	CompleteTask(AssistedPoints, TEXT("اشتعل! المرة الجاية حاول تقبض عليه"));
 
 	TWeakObjectPtr<ANuhoudLantern> WeakLantern(Lantern);
 	TWeakObjectPtr<ANuhoudTargetMarker> WeakMarker(Marker);
@@ -591,7 +591,7 @@ void ANuhoudTaskDirector::ServeDate(ANuhoudGrabbable* Date, bool bAssisted)
 
 	Date->PlaceAt(FTransform(Date->GetActorRotation(), Marker->GetPlateTop() + FVector(0.f, 0.f, Date->GetRestHeight())));
 	Marker->Celebrate();
-	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("Thank you! Your guest is served"));
+	CompleteTask(bAssisted ? AssistedPoints : FullPoints, TEXT("شكراً! قدّمت التمرة لضيفك"));
 
 	TWeakObjectPtr<ANuhoudGrabbable> WeakDate(Date);
 	TWeakObjectPtr<ANuhoudTargetMarker> WeakMarker(Marker);
@@ -621,7 +621,7 @@ void ANuhoudTaskDirector::EvaluateEat(float DeltaTime)
 		if (Distance < MouthRadius * AssistScale())
 		{
 			Date->Eat();
-			CompleteTask(Distance >= MouthRadius ? AssistedPoints : FullPoints, TEXT("Bil hana wal shifa! Enjoy your date"));
+			CompleteTask(Distance >= MouthRadius ? AssistedPoints : FullPoints, TEXT("بالهنا والعافية!"));
 			return;
 		}
 	}
@@ -652,19 +652,19 @@ FString ANuhoudTaskDirector::GetInstruction() const
 	case ETask::HangLantern:
 		if (IsValid(TaskLantern) && TaskLantern->GetState() == ENuhoudGrabState::Held)
 		{
-			return TEXT("Lift it to the glowing hook, then open your hand");
+			return TEXT("ارفعه للخطاف المضيء، وبعدين افتح يدك");
 		}
 		return TaskTime > TouchLightingAfterSeconds
-			? TEXT("Close your hand around the lantern, or rest your palm on it")
-			: TEXT("Grab the lantern and hang it on the glowing hook");
+			? TEXT("اقبض على الفانوس، أو حط كفّك عليه")
+			: TEXT("امسك الفانوس وعلّقه على الخطاف المضيء");
 	case ETask::ServeDate:
 		return IsAnyDateHeld()
-			? TEXT("Put the date on the glowing plate and open your fingers")
-			: TEXT("Pinch a date from the bowl to serve your guest");
+			? TEXT("حط التمرة على الصحن المضيء وافتح أصابعك")
+			: TEXT("اقرص تمرة من الصحن وقدّمها لضيفك");
 	case ETask::EatDate:
 		return IsAnyDateHeld()
-			? TEXT("Bring the date to your mouth")
-			: TEXT("Pinch a date from the bowl and eat it");
+			? TEXT("قرّب التمرة من فمك")
+			: TEXT("اقرص تمرة من الصحن وكُلها");
 	}
 	return FString();
 }

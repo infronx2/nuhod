@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
@@ -32,6 +32,9 @@ protected:
 	UFUNCTION()
 	void OnLoginSuccess(const FString& PatientId, const FString& AuthToken);
 
+	/** Asks about pain and tiredness, then starts the session or sends the patient to rest. */
+	void AskBeforeSession();
+
 	/** Applies the loaded plan's hand to the input and starts handing out tasks. */
 	void BeginTasks();
 
@@ -54,4 +57,8 @@ private:
 	ANuhoudRenderManager* RenderManagerActor;
 
 	bool bGameStarted;
+
+	/** The answers before the session, kept until the session record is reset. */
+	int32 PainBefore = -1;
+	int32 FatigueBefore = -1;
 };

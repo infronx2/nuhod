@@ -186,6 +186,8 @@ export interface V2TreatmentPlan {
   targetAngle: number
   sessionsPerWeek: number
   dailyRepGoal: number
+  /** The game asks the patient to rest after this many minutes. */
+  maxSessionMinutes?: number
   startDate: string
   endDate: string | null
   active: boolean

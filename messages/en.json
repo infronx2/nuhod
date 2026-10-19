@@ -513,7 +513,9 @@
     "save": "Save plan",
     "cancel": "Cancel",
     "saved": "Plan saved",
-    "failed": "Could not save the plan"
+    "failed": "Could not save the plan",
+    "maxMinutes": "Longest session (minutes)",
+    "maxMinutesHint": "The game then ends the session and asks the patient to rest."
   },
   "account": {
     "changePassword": "Change password",

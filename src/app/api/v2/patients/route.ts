@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
         db.treatmentPlan.findMany({
           where: { patientId: { in: patientIds }, active: true },
           orderBy: { createdAt: 'desc' },
-          select: { patientId: true, targetAngle: true, dailyRepGoal: true, sessionsPerWeek: true, targetLimb: true, notes: true },
+          select: { patientId: true, targetAngle: true, dailyRepGoal: true, sessionsPerWeek: true, maxSessionMinutes: true, targetLimb: true, notes: true },
         }),
       ])
     : [[], []]
@@ -115,6 +115,7 @@ export async function GET(req: NextRequest) {
               targetAngle: plan.targetAngle,
               dailyRepGoal: plan.dailyRepGoal,
               sessionsPerWeek: plan.sessionsPerWeek,
+              maxSessionMinutes: plan.maxSessionMinutes,
               targetLimb: plan.targetLimb,
               notes: plan.notes,
             }

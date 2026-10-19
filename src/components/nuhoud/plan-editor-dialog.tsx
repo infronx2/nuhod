@@ -31,6 +31,7 @@ export interface PlanEditorPlan {
   targetAngle: number
   dailyRepGoal: number
   sessionsPerWeek: number
+  maxSessionMinutes?: number
   targetLimb: string
   notes?: string | null
 }
@@ -44,7 +45,7 @@ interface PlanEditorDialogProps {
   onSaved?: () => void
 }
 
-const DEFAULTS = { targetAngle: 45, dailyRepGoal: 10, sessionsPerWeek: 5 }
+const DEFAULTS = { targetAngle: 45, dailyRepGoal: 10, sessionsPerWeek: 5, maxSessionMinutes: 20 }
 
 function limbFrom(plan: PlanEditorPlan | null, side?: string): TargetLimb {
   const limb = plan?.targetLimb
@@ -62,6 +63,7 @@ export function PlanEditorDialog({ patient, plan, open, onOpenChange, onSaved }:
   const [angle, setAngle] = React.useState(DEFAULTS.targetAngle)
   const [reps, setReps] = React.useState(DEFAULTS.dailyRepGoal)
   const [perWeek, setPerWeek] = React.useState(DEFAULTS.sessionsPerWeek)
+  const [maxMinutes, setMaxMinutes] = React.useState(DEFAULTS.maxSessionMinutes)
   const [limb, setLimb] = React.useState<TargetLimb>('upper_right')
   const [notes, setNotes] = React.useState('')
   const [saving, setSaving] = React.useState(false)
@@ -72,6 +74,7 @@ export function PlanEditorDialog({ patient, plan, open, onOpenChange, onSaved }:
     setAngle(plan?.targetAngle ?? DEFAULTS.targetAngle)
     setReps(plan?.dailyRepGoal ?? DEFAULTS.dailyRepGoal)
     setPerWeek(plan?.sessionsPerWeek ?? DEFAULTS.sessionsPerWeek)
+    setMaxMinutes(plan?.maxSessionMinutes ?? DEFAULTS.maxSessionMinutes)
     setLimb(limbFrom(plan, patient?.affectedSide))
     setNotes(plan?.notes ?? '')
   }, [open, plan, patient?.affectedSide])
@@ -87,6 +90,7 @@ export function PlanEditorDialog({ patient, plan, open, onOpenChange, onSaved }:
           targetAngle: angle,
           dailyRepGoal: reps,
           sessionsPerWeek: perWeek,
+          maxSessionMinutes: maxMinutes,
           targetLimb: limb,
           notes: notes.trim() || undefined,
         },
@@ -132,6 +136,7 @@ export function PlanEditorDialog({ patient, plan, open, onOpenChange, onSaved }:
             <Stepper label={t('dailyReps')} hint={t('dailyRepsHint')} value={reps} min={1} max={60} onChange={setReps} />
             <Stepper label={t('sessionsPerWeek')} value={perWeek} min={1} max={14} onChange={setPerWeek} />
           </div>
+          <Stepper label={t('maxMinutes')} hint={t('maxMinutesHint')} value={maxMinutes} min={5} max={60} step={5} onChange={setMaxMinutes} />
 
           <div className="flex flex-col gap-2">
             <Label>{t('limb')}</Label>
@@ -180,6 +185,7 @@ function Stepper({
   value,
   min,
   max,
+  step = 1,
   onChange,
 }: {
   label: string
@@ -187,6 +193,7 @@ function Stepper({
   value: number
   min: number
   max: number
+  step?: number
   onChange: (v: number) => void
 }) {
   return (
@@ -198,7 +205,7 @@ function Stepper({
           size="icon"
           variant="ghost"
           className="h-9 w-9"
-          onClick={() => onChange(Math.max(min, value - 1))}
+          onClick={() => onChange(Math.max(min, value - step))}
           disabled={value <= min}
           aria-label={`${label} −`}
         >
@@ -210,7 +217,7 @@ function Stepper({
           size="icon"
           variant="ghost"
           className="h-9 w-9"
-          onClick={() => onChange(Math.min(max, value + 1))}
+          onClick={() => onChange(Math.min(max, value + step))}
           disabled={value >= max}
           aria-label={`${label} +`}
         >

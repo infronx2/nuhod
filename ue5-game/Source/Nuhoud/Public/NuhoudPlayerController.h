@@ -1,11 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "IWebSocket.h"
 #include "NuhoudPlayerController.generated.h"
 
-class UTextRenderComponent;
+class UNuhoudHudWidget;
+class UTextBlock;
 class ANuhoudInputAdapter;
 
 UCLASS()
@@ -68,6 +69,9 @@ protected:
 	void TriggerPainStop(const TCHAR* How);
 	void EndSession();
 
+	/** Set when the plan's time limit ended the session, to say so on the closing screen. */
+	bool bEndedByTimeLimit = false;
+
 	void SpawnPainStopButton();
 	void SpawnStatusHUD();
 
@@ -81,16 +85,19 @@ private:
 	AActor* PainStopActor;
 
 	UPROPERTY()
-	UTextRenderComponent* ScoreText;
+	UNuhoudHudWidget* Hud;
 
 	UPROPERTY()
-	UTextRenderComponent* StatusText;
+	UTextBlock* ScoreText;
 
 	UPROPERTY()
-	UTextRenderComponent* GestureText;
+	UTextBlock* StatusText;
 
 	UPROPERTY()
-	UTextRenderComponent* InstructionText;
+	UTextBlock* GestureText;
+
+	UPROPERTY()
+	UTextBlock* InstructionText;
 
 	EPoseLink PoseLink;
 	/** Reconnect attempts since the link was last up. */

@@ -1,5 +1,6 @@
-#include "NuhoudLoginWidget.h"
+﻿#include "NuhoudLoginWidget.h"
 #include "NuhoudGameInstance.h"
+#include "NuhoudUI.h"
 #include "HttpModule.h"
 #include "Dom/JsonObject.h"
 #include "Serialization/JsonReader.h"
@@ -50,8 +51,8 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 
 	// Title
 	TitleLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleLabel"));
-	TitleLabel->SetText(FText::FromString(TEXT("NUHOUD")));
-	FSlateFontInfo TitleFont = TitleLabel->GetFont();
+	TitleLabel->SetText(FText::FromString(TEXT("نُهوض")));
+	FSlateFontInfo TitleFont = NuhoudUI::Font(12.f);
 	TitleFont.Size = 32;
 	TitleLabel->SetFont(TitleFont);
 	TitleLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.05f, 0.7f, 0.6f)));
@@ -62,8 +63,8 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 
 	// Subtitle
 	UTextBlock* Subtitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Subtitle"));
-	Subtitle->SetText(FText::FromString(TEXT("Rehabilitation Therapy")));
-	FSlateFontInfo SubFont = Subtitle->GetFont();
+	Subtitle->SetText(FText::FromString(TEXT("جلسة التأهيل في العيادة")));
+	FSlateFontInfo SubFont = NuhoudUI::Font(12.f);
 	SubFont.Size = 12;
 	Subtitle->SetFont(SubFont);
 	Subtitle->SetColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.55f, 0.6f)));
@@ -74,8 +75,8 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 
 	// Email label
 	UTextBlock* EmailLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("EmailLabel"));
-	EmailLabel->SetText(FText::FromString(TEXT("Email")));
-	FSlateFontInfo LabelFont = EmailLabel->GetFont();
+	EmailLabel->SetText(FText::FromString(TEXT("اسم المستخدم")));
+	FSlateFontInfo LabelFont = NuhoudUI::Font(12.f);
 	LabelFont.Size = 11;
 	EmailLabel->SetFont(LabelFont);
 	EmailLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.65f, 0.7f)));
@@ -84,13 +85,13 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 
 	// Email input
 	EmailInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("EmailInput"));
-	EmailInput->SetHintText(FText::FromString(TEXT("patient@nuhoud.health")));
+	EmailInput->SetHintText(FText::FromString(TEXT("nh1234")));
 	auto* EISlot = VBox->AddChildToVerticalBox(EmailInput);
 	EISlot->SetPadding(FMargin(0, 0, 0, 12));
 
 	// Password label
 	UTextBlock* PwLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PwLabel"));
-	PwLabel->SetText(FText::FromString(TEXT("Password")));
+	PwLabel->SetText(FText::FromString(TEXT("الرمز")));
 	PwLabel->SetFont(LabelFont);
 	PwLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.65f, 0.7f)));
 	auto* PLSlot = VBox->AddChildToVerticalBox(PwLabel);
@@ -98,7 +99,7 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 
 	// Password input
 	PasswordInput = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("PasswordInput"));
-	PasswordInput->SetHintText(FText::FromString(TEXT("Enter password")));
+	PasswordInput->SetHintText(FText::FromString(TEXT("••••••")));
 	PasswordInput->SetIsPassword(true);
 	auto* PISlot = VBox->AddChildToVerticalBox(PasswordInput);
 	PISlot->SetPadding(FMargin(0, 0, 0, 20));
@@ -118,8 +119,8 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 	LoginButton->SetStyle(BtnStyle);
 
 	UTextBlock* BtnText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BtnText"));
-	BtnText->SetText(FText::FromString(TEXT("Sign In")));
-	FSlateFontInfo BtnFont = BtnText->GetFont();
+	BtnText->SetText(FText::FromString(TEXT("دخول")));
+	FSlateFontInfo BtnFont = NuhoudUI::Font(12.f);
 	BtnFont.Size = 16;
 	BtnText->SetFont(BtnFont);
 	BtnText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
@@ -134,7 +135,7 @@ void UNuhoudLoginWidget::NativeOnInitialized()
 	// Status label
 	StatusLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("StatusLabel"));
 	StatusLabel->SetText(FText::GetEmpty());
-	FSlateFontInfo StatusFont = StatusLabel->GetFont();
+	FSlateFontInfo StatusFont = NuhoudUI::Font(12.f);
 	StatusFont.Size = 11;
 	StatusLabel->SetFont(StatusFont);
 	StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f)));
@@ -170,7 +171,7 @@ void UNuhoudLoginWidget::OnLoginClicked()
 
 	if (Email.IsEmpty() || Password.IsEmpty())
 	{
-		if (StatusLabel) StatusLabel->SetText(FText::FromString(TEXT("Please enter email and password")));
+		if (StatusLabel) StatusLabel->SetText(FText::FromString(TEXT("اكتب اسم المستخدم والرمز")));
 		return;
 	}
 
@@ -178,7 +179,7 @@ void UNuhoudLoginWidget::OnLoginClicked()
 	if (StatusLabel)
 	{
 		StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.55f, 0.6f)));
-		StatusLabel->SetText(FText::FromString(TEXT("Signing in...")));
+		StatusLabel->SetText(FText::FromString(TEXT("ندخلك…")));
 	}
 	if (LoginButton) LoginButton->SetIsEnabled(false);
 
@@ -214,7 +215,7 @@ void UNuhoudLoginWidget::OnLoginResponse(FHttpRequestPtr Request, FHttpResponseP
 		if (StatusLabel)
 		{
 			StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f)));
-			StatusLabel->SetText(FText::FromString(TEXT("Connection failed — check your internet")));
+			StatusLabel->SetText(FText::FromString(TEXT("ما فيه اتصال، تأكد من الإنترنت")));
 		}
 		return;
 	}
@@ -229,14 +230,17 @@ void UNuhoudLoginWidget::OnLoginResponse(FHttpRequestPtr Request, FHttpResponseP
 		if (StatusLabel)
 		{
 			StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f)));
-			StatusLabel->SetText(FText::FromString(TEXT("Server error — try again")));
+			StatusLabel->SetText(FText::FromString(TEXT("خطأ في الخادم، حاول مرة ثانية")));
 		}
 		return;
 	}
 
 	if (Code != 200 || !J->GetBoolField(TEXT("ok")))
 	{
-		FString ErrMsg = J->HasField(TEXT("error")) ? J->GetStringField(TEXT("error")) : TEXT("Invalid credentials");
+		const FString ErrMsg = Code == 401 ? TEXT("اسم المستخدم أو الرمز غير صحيح")
+			: Code == 403 ? TEXT("الحساب موقوف، كلّم طبيبك")
+			: Code == 429 ? TEXT("محاولات كثيرة، حاول بعد ربع ساعة أو اطلب رمز جديد من طبيبك")
+			: TEXT("ما قدرنا ندخلك، حاول مرة ثانية");
 		if (StatusLabel)
 		{
 			StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f)));
@@ -258,7 +262,7 @@ void UNuhoudLoginWidget::OnLoginResponse(FHttpRequestPtr Request, FHttpResponseP
 		if (StatusLabel)
 		{
 			StatusLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.2f)));
-			StatusLabel->SetText(FText::FromString(TEXT("Invalid server response")));
+			StatusLabel->SetText(FText::FromString(TEXT("رد غير متوقع من الخادم")));
 		}
 		return;
 	}
@@ -279,7 +283,7 @@ void UNuhoudLoginWidget::OnLoginResponse(FHttpRequestPtr Request, FHttpResponseP
 		{
 			UserName = (*UserObj)->GetStringField(TEXT("name"));
 		}
-		StatusLabel->SetText(FText::FromString(FString::Printf(TEXT("Welcome, %s!"), *UserName)));
+		StatusLabel->SetText(FText::FromString(FString::Printf(TEXT("أهلاً %s"), *UserName)));
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("Nuhoud: Login success — Patient: %s"), *PatientId);
