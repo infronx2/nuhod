@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
- * GET /api/v2/streak?userId=X — returns the streak for the current user
+ * GET /api/v2/streak?userId=X: returns the streak for the current user
  * (or, for doctors, any patient's streak via userId).
  */
 export async function GET(req: NextRequest) {

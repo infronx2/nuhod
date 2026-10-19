@@ -1,6 +1,5 @@
 /**
- * Shared Nuhoud types — match the backend WebSocket protocol exactly.
- * Authoritative spec: mini-services/pose-server/main.py (Task ID 1-4).
+ * Types shared with the pose server's WebSocket protocol (ue5-game/pose_server.py).
  */
 
 export type WsCommand =

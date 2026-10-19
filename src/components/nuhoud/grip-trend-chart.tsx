@@ -28,7 +28,7 @@ function formatSessionDate(iso: string): string {
 }
 
 /**
- * GripTrendChart — hand function from the majlis game per session: best fist closure (%) and the
+ * Hand function from the majlis game per session: best fist closure (%) and the
  * closest thumb-index pinch (cm, lower is better). Sessions without hand data (web tracker) are
  * left out.
  */

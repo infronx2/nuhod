@@ -51,7 +51,7 @@ interface GoalsTrackerProps {
 }
 
 /**
- * GoalsTracker — shows the patient's active + achieved rehabilitation
+ * Shows the patient's active + achieved rehabilitation
  * goals with animated progress bars. Achieved goals get a celebratory
  * checkmark + trophy. Doctors see a delete button per goal.
  */
@@ -210,7 +210,7 @@ export function GoalsTracker({ patientId }: GoalsTrackerProps = {}) {
 }
 
 /**
- * GoalSparkline — a tiny inline SVG sparkline showing the per-session
+ * A tiny inline SVG sparkline showing the per-session
  * metric values relevant to this goal's type, with a dashed target line.
  */
 function GoalSparkline({ goal, sessions }: { goal: Goal; sessions: SessionSample[] }) {

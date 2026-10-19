@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
- * GET /api/v2/sessions/[id] — full session record (including the angleTimeline
+ * GET /api/v2/sessions/[id]: full session record (including the angleTimeline
  * JSON for the replay visualizer).
  *
  * Auth: the patient who owns the session, or any doctor/admin.

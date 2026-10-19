@@ -52,7 +52,7 @@ interface PrescribeFromPresetDialogProps {
 }
 
 /**
- * PrescribeFromPresetDialog — when a doctor clicks "Prescribe" on an exercise
+ * When a doctor clicks "Prescribe" on an exercise
  * preset from the ExerciseLibrary, this dialog opens. It lets the doctor:
  *  1. Pick a patient from the roster (with avatar + name + affected side).
  *  2. Review the pre-filled target angle (from the preset) via a slider.

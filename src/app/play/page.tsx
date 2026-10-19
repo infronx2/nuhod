@@ -17,7 +17,7 @@ export const viewport: Viewport = {
   themeColor: '#0B3E46',
 }
 
-/** /play — the majlis session in the browser (phone, tablet or laptop camera). */
+/** /play, the majlis session in the browser (phone, tablet or laptop camera). */
 export default function PlayPage() {
   return (
     <AuthProvider>

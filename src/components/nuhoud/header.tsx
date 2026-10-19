@@ -11,7 +11,7 @@ import { NeuronMark } from '@/components/nuhoud/neuron-mark'
 import { useAuth } from '@/hooks/use-auth'
 
 /**
- * Header — sticky bar: brand, language switch, theme switch, notifications and the user menu.
+ * Sticky bar: brand, language switch, theme switch, notifications and the user menu.
  * The language switch stores the locale cookie via /api/v2/locale, then reloads.
  */
 export function Header() {

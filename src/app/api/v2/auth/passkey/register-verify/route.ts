@@ -5,7 +5,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { readChallenge, relyingParty } from '@/lib/passkeys'
 
-// POST /api/v2/auth/passkey/register-verify — Body: { response, challengeToken, deviceLabel? }
+// POST /api/v2/auth/passkey/register-verify. Body: { response, challengeToken, deviceLabel? }
 export async function POST(req: NextRequest) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

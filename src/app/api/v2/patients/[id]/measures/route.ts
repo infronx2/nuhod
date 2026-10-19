@@ -5,7 +5,7 @@ import { canAccessPatient, isStaff } from '@/lib/access'
 import { audit } from '@/lib/audit'
 import { INSTRUMENTS, TIMEPOINTS, isInstrument } from '@/lib/measures'
 
-// GET /api/v2/patients/[id]/measures — the patient's hand-taken clinical measures (doctor only).
+// GET /api/v2/patients/[id]/measures: the patient's hand-taken clinical measures (doctor only).
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   return NextResponse.json({ ok: true, measures })
 }
 
-// POST — Body: { instrument, value, side?, timepoint?, measuredAt?, notes? }
+// POST. Body: { instrument, value, side?, timepoint?, measuredAt?, notes? }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   return NextResponse.json({ ok: true, measure })
 }
 
-// DELETE ?measureId= — remove a mistaken entry.
+// DELETE ?measureId=: remove a mistaken entry.
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

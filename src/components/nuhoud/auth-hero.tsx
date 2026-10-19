@@ -6,7 +6,7 @@ import { Check, Stethoscope } from 'lucide-react'
 import { NeuronMark } from '@/components/nuhoud/neuron-mark'
 
 /**
- * AuthHero — the sign-in page's brand panel: the promise, three facts, and a small stack of
+ * The sign-in page's brand panel: the promise, three facts, and a small stack of
  * floating preview cards (a live angle reading, today's session, the doctor's review) that tilt
  * with the pointer through DepthLayer ([data-tilt]).
  */

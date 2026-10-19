@@ -37,7 +37,7 @@ const LIMB_META: Record<string, { label: string; color: string; ring: string }> 
 }
 
 /**
- * LimbBreakdown — a compact card showing per-limb stats (sessions, reps,
+ * A compact card showing per-limb stats (sessions, reps,
  * accuracy, max ROM, compensation errors) for the patient's recent sessions.
  *
  * Clinical use: a clinician comparing left vs right recovery can spot which

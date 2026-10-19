@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
- * GET /api/v2/notifications?limit=20&userId=X — list notifications.
+ * GET /api/v2/notifications?limit=20&userId=X: list notifications.
  * By default returns the current user's notifications. Doctors can pass
  * `userId` to view a specific patient's notification feed (used by the
  * patient-detail progress timeline).
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/v2/notifications/mark-all-read — mark all of the user's
+ * POST /api/v2/notifications/mark-all-read: mark all of the user's
  * notifications as read.
  */
 export async function POST(req: NextRequest) {

@@ -6,7 +6,7 @@ import { audit } from '@/lib/audit'
 /** Pain at or above this before a session: no session today, and the doctor is told. */
 const PAIN_STOP_BEFORE = 7
 
-// POST /api/v2/checkins — the patient's answers before a session. Body: { pain: 0-10, fatigue: 0-2 }
+// POST /api/v2/checkins: the patient's answers before a session. Body: { pain: 0-10, fatigue: 0-2 }
 // Returns { ok, allowed }. A session that is not allowed alerts the patient's doctor.
 export async function POST(req: NextRequest) {
   const payload = getUserFromRequest(req)

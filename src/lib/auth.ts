@@ -1,10 +1,4 @@
-/**
- * Nuhoud auth helpers — JWT issue + verify, password hash + compare.
- *
- * Uses HS256 with a per-process secret. In production this would come from a
- * secret manager; here we fall back to a deterministic dev secret so tokens
- * survive across dev-server reloads within the same sandbox session.
- */
+// Sign-in tokens (HS256 JWT) and password hashing.
 import jwt, { type JwtPayload } from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 

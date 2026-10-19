@@ -29,7 +29,7 @@ interface ExercisePickerProps {
 }
 
 /**
- * ExercisePicker — dropdown of clinical exercise presets fetched from
+ * Dropdown of clinical exercise presets fetched from
  * /api/v2/exercises. Selecting a preset sets the target angle + limb
  * automatically and shows the preset's description. The 'custom' option
  * keeps the manual slider behavior.

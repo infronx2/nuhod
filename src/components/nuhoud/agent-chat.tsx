@@ -55,7 +55,7 @@ const SUGGESTED_KEYS = {
 } as const
 
 /**
- * AgentChat — the chat panel of Mu'in (مُعين), Nuhoud's assistant.
+ * The chat panel of Mu'in (مُعين), Nuhoud's assistant.
  *
  * Calls POST /api/v2/agent/chat. For a patient it talks about their own rehab; for a doctor it
  * talks about one patient (patientId) or the whole roster (no patientId), and shows plan changes
@@ -78,7 +78,7 @@ export function AgentChat({ patientId, patientName, variant = 'full', onPlanAppl
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   // For the embedded variant, the panel is always "open" and there's no
-  // floating button — the parent controls visibility by mounting/unmounting.
+  // floating button, the parent controls visibility by mounting/unmounting.
   const embedded = variant === 'embedded'
 
   // Load the persisted conversation (including Mu'in's after-session notes) when the panel opens.
@@ -101,7 +101,7 @@ export function AgentChat({ patientId, patientName, variant = 'full', onPlanAppl
         )
       })
       .catch(() => {
-        /* silent — history load is best-effort */
+        /* silent, history load is best-effort */
       })
     return () => {
       cancelled = true
@@ -201,7 +201,7 @@ export function AgentChat({ patientId, patientName, variant = 'full', onPlanAppl
 
   const isRTLText = (text: string) => /[؀-ۿ]/.test(text)
 
-  // The panel content — shared between the floating (compact/full) and the
+  // The panel content, shared between the floating (compact/full) and the
   // inline (embedded) variants.
   const panel = (
     <>

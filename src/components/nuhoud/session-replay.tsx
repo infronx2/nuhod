@@ -31,7 +31,7 @@ interface SessionReplayProps {
 }
 
 /**
- * SessionReplay — scrubbable timeline of a completed session's elbow-angle
+ * Scrubbable timeline of a completed session's elbow-angle
  * samples. The `angleTimeline` is stored per session as a JSON array of
  * floats (one sample per frame at ~10 fps). This component decodes it,
  * renders a recharts line chart, and plays it back with a play/pause
@@ -72,7 +72,7 @@ export function SessionReplay({
   const rafRef = React.useRef<number | null>(null)
   const lastTsRef = React.useRef(0)
 
-  // Playback loop — advances ~10 frames per second to match the recording.
+  // Playback loop, advances ~10 frames per second to match the recording.
   React.useEffect(() => {
     if (!playing || samples.length === 0) return
     lastTsRef.current = 0
@@ -264,7 +264,7 @@ export function SessionReplay({
 }
 
 /**
- * SessionReplaySkeleton — loading state.
+ * Loading state.
  */
 export function SessionReplaySkeleton() {
   const tu = useTranslations('ui')

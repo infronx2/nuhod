@@ -4,7 +4,7 @@ import { getUserFromRequest, requireRole } from '@/lib/auth'
 import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
- * GET /api/v2/goals?patientId=X — list a patient's goals (achieved + active).
+ * GET /api/v2/goals?patientId=X: list a patient's goals (achieved + active).
  * Doctors can query any patient; patients get only their own.
  */
 export async function GET(req: NextRequest) {
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/v2/goals — doctor creates a new goal for a patient.
+ * POST /api/v2/goals: doctor creates a new goal for a patient.
  * Body: { patientId, type, title, targetValue, targetDate? }
  */
 export async function POST(req: NextRequest) {

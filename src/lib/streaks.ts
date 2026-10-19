@@ -26,7 +26,7 @@ export async function updateStreakOnSession(userId: string, sessionDate: Date): 
     return { current: 1, longest: 1, freezesLeft: streak.freezesLeft, milestone: null, usedFreeze: false }
   }
 
-  // Already trained today — no streak change.
+  // Already trained today, no streak change.
   if (streak.lastSessionDate === todayKey) {
     return { current: streak.currentStreak, longest: streak.longestStreak, freezesLeft: streak.freezesLeft, milestone: null, usedFreeze: false }
   }
@@ -46,14 +46,14 @@ export async function updateStreakOnSession(userId: string, sessionDate: Date): 
   let usedFreeze = false
 
   if (gapDays === 1) {
-    // Consecutive day — increment.
+    // Consecutive day, increment.
     newCurrent = streak.currentStreak + 1
   } else if (gapDays === 2 && streak.freezesLeft > 0) {
-    // Missed exactly one day — use a freeze to preserve the streak.
+    // Missed exactly one day, use a freeze to preserve the streak.
     newCurrent = streak.currentStreak + 1
     usedFreeze = true
   } else {
-    // Gap too big or no freezes left — reset.
+    // Gap too big or no freezes left, reset.
     newCurrent = 1
   }
 
@@ -72,7 +72,6 @@ export async function updateStreakOnSession(userId: string, sessionDate: Date): 
     },
   })
 
-  // Check for a milestone.
   let milestone: number | null = null
   if (STREAK_MILESTONES.includes(newCurrent)) {
     milestone = newCurrent

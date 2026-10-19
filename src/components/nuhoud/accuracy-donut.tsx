@@ -16,7 +16,7 @@ interface AccuracyDonutProps {
 }
 
 /**
- * AccuracyDonut — reusable donut chart of correct vs compensated reps.
+ * Reusable donut chart of correct vs compensated reps.
  * Reuses the pattern from session-history but is parameterised so the
  * doctor dashboard, patient-detail view and the legacy dashboard can all
  * share it.

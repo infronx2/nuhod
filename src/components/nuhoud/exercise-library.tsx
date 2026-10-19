@@ -38,7 +38,7 @@ const JOINT_ICON: Record<string, React.ComponentType<{ className?: string }>> = 
 }
 
 /**
- * ExerciseLibrary — a searchable, filterable grid of the clinical exercise
+ * A searchable, filterable grid of the clinical exercise
  * preset library. Each preset shows its name (EN + Arabic), description,
  * difficulty badge, target-angle viz, joint + limb, and a "prescribe"
  * shortcut for doctors. Used as a dedicated section on the doctor dashboard.

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 
 /**
- * POST /api/v2/notifications/[id]/read — mark a single notification as read.
+ * POST /api/v2/notifications/[id]/read: mark a single notification as read.
  */
 export async function POST(
   req: NextRequest,

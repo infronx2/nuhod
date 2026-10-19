@@ -4,7 +4,7 @@ import { QrSignIn } from '@/components/nuhoud/qr-sign-in'
 
 export const metadata: Metadata = { title: 'نُهوض · الدخول', robots: { index: false } }
 
-/** /q#<token> — where the QR code the doctor shows a patient opens. */
+/** /q#<token>, where the QR code the doctor shows a patient opens. */
 export default function QrPage() {
   return (
     <AuthProvider>

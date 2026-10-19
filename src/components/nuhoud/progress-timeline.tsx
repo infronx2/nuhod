@@ -38,13 +38,13 @@ const TYPE_META: Record<string, { icon: React.ComponentType<{ className?: string
 const HIDDEN_TYPES = new Set(['badge_earned', 'streak_milestone'])
 
 /**
- * ProgressTimeline — a vertical milestone timeline showing the patient's
+ * A vertical milestone timeline showing the patient's
  * rehabilitation journey: badges earned, plans prescribed, sessions saved,
  * streak milestones. Each entry is a card on a vertical line with a
  * color-coded icon node.
  *
  * Clinical + motivational use: gives the patient (and doctor) a visual
- * narrative of progress over time — the "story" of their recovery.
+ * narrative of progress over time, the "story" of their recovery.
  */
 export function ProgressTimeline({ patientId, loading = false }: ProgressTimelineProps) {
   const tu = useTranslations('ui')
@@ -54,7 +54,7 @@ export function ProgressTimeline({ patientId, loading = false }: ProgressTimelin
   React.useEffect(() => {
     let cancelled = false
     setLoadState('loading')
-    // The patient's notifications ARE the timeline — each badge_earned,
+    // The patient's notifications ARE the timeline, each badge_earned,
     // plan_prescribed, session_saved event is a milestone. Pass userId so
     // a doctor viewing a patient sees THAT patient's milestones.
     apiFetch<{ ok: boolean; notifications: TimelineEntry[] }>(

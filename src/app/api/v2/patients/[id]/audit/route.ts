@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { canAccessPatient, isStaff } from '@/lib/access'
 
-// GET /api/v2/patients/[id]/audit — who opened or changed this patient's records (doctor only).
+// GET /api/v2/patients/[id]/audit: who opened or changed this patient's records (doctor only).
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

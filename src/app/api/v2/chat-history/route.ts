@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     take: limit,
   })
 
-  // Reverse so the oldest is first — the UI appends in chronological order.
+  // Reverse so the oldest is first, the UI appends in chronological order.
   return NextResponse.json({
     ok: true,
     messages: messages.reverse().map((m) => ({
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * DELETE /api/v2/chat-history?patientId=X — clear the persisted conversation.
+ * DELETE /api/v2/chat-history?patientId=X: clear the persisted conversation.
  */
 export async function DELETE(req: NextRequest) {
   const payload = getUserFromRequest(req)

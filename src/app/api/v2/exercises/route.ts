@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET /api/v2/exercises — list the clinical exercise preset library.
+// GET /api/v2/exercises: list the clinical exercise preset library.
 // Public read; seeded lazily on first call.
 export async function GET() {
   await ensureSeedPresets()

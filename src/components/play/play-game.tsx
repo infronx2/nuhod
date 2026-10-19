@@ -18,7 +18,7 @@ interface ActivePlan { targetAngle: number; dailyRepGoal: number; targetLimb: st
 const POSITION_HOLD_MS = 1500
 
 /**
- * PlayGame — the majlis session in the browser. Steps: how to set up the phone, camera permission
+ * The majlis session in the browser. Steps: how to set up the phone, camera permission
  * (it must come from a tap on iPhone), a check that the camera sees the shoulders and hands, then
  * the session, then saving it for the doctor.
  */

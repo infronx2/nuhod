@@ -4,7 +4,7 @@ import { getUserFromRequest, requireRole } from '@/lib/auth'
 import { canAccessPatient } from '@/lib/access'
 import { createDefaultPlan, isTargetLimb, sideToTargetLimb, targetLimbToSide } from '@/lib/plans'
 
-// POST /api/v2/patients/[id]/plans — doctor creates a treatment plan for a patient (the new plan
+// POST /api/v2/patients/[id]/plans: doctor creates a treatment plan for a patient (the new plan
 // replaces the active one). Body: { title?, targetLimb?: "upper_right"|"upper_left"|"bilateral",
 // targetAngle?, sessionsPerWeek?, dailyRepGoal?, maxSessionMinutes?, notes? }
 export async function POST(
@@ -32,7 +32,7 @@ export async function POST(
   try {
     body = await req.json()
   } catch {
-    /* empty body is fine — use defaults */
+    /* empty body is fine, use defaults */
   }
 
   const targetLimb = isTargetLimb(body.targetLimb) ? body.targetLimb : sideToTargetLimb(patient.affectedSide)
@@ -66,7 +66,7 @@ export async function POST(
   return NextResponse.json({ ok: true, plan })
 }
 
-// GET /api/v2/patients/[id]/plans — list a patient's plans (history).
+// GET /api/v2/patients/[id]/plans: list a patient's plans (history).
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },

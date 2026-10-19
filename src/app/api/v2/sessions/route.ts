@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, count: sessions.length, sessions })
 }
 
-// POST /api/v2/sessions — persist a completed rehab session.
+// POST /api/v2/sessions: persist a completed rehab session.
 // Auth required (the patient or a doctor on their behalf).
 // Body: { patientId, planId?, source?, limb?, durationSeconds, totalReps,
 //         correctReps, maxAchievedAngle, compensationErrors, gamificationScore,

@@ -1,5 +1,5 @@
 /**
- * apiFetch — thin wrapper around fetch that auto-attaches the Nuhoud JWT
+ * apiFetch, thin wrapper around fetch that auto-attaches the Nuhoud JWT
  * Bearer token and gracefully handles 401 by clearing the token and bouncing
  * the user back to the unauthenticated state.
  *
@@ -79,7 +79,7 @@ export async function apiFetch<T = unknown>(
 
   if (!res.ok) {
     if (res.status === 401 && !noAuth) {
-      // Token is invalid/expired — clear it so the auth hook can bounce to login.
+      // Token is invalid/expired, clear it so the auth hook can bounce to login.
       setToken(null)
     }
     const msg =

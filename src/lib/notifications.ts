@@ -33,7 +33,7 @@ export interface CreateNotificationInput {
 
 /**
  * Create a notification. Silent on failure so callers never crash because
- * of a notification error — the feed is best-effort.
+ * of a notification error, the feed is best-effort.
  */
 export async function createNotification(input: CreateNotificationInput): Promise<void> {
   try {

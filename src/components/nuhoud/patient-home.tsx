@@ -33,7 +33,7 @@ function localDay(iso: string | Date): string {
 }
 
 /**
- * PatientHome — the patient's whole dashboard: one big button that opens the majlis game on this
+ * The patient's whole dashboard: one big button that opens the majlis game on this
  * computer, today's goal from the doctor's plan, the target angle, and recent progress.
  */
 export function PatientHome() {

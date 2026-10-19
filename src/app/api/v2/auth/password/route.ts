@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest, hashPassword, verifyPassword } from '@/lib/auth'
 
-// POST /api/v2/auth/password — the signed-in user changes their own password.
+// POST /api/v2/auth/password: the signed-in user changes their own password.
 // Body: { currentPassword, newPassword }
 export async function POST(req: NextRequest) {
   const payload = getUserFromRequest(req)

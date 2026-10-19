@@ -14,7 +14,7 @@ const DAILY_LIMIT_TOTAL = Number(process.env.MUIN_DAILY_LIMIT_TOTAL || 300)
 const OFFLINE_PREFIXES = ['مُعين غير متصل', "Mu'in is offline"]
 
 /**
- * POST /api/v2/agent/chat — talk to Mu'in (مُعين), see src/lib/muin/agent.ts.
+ * POST /api/v2/agent/chat: talk to Mu'in (مُعين), see src/lib/muin/agent.ts.
  *
  * Body: { message: string, patientId?: string }
  * - A patient talks about their own rehab (patientId is ignored unless it is their own).
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * DELETE /api/v2/agent/chat?patientId=X — clear the caller's conversation about X (or their own
+ * DELETE /api/v2/agent/chat?patientId=X: clear the caller's conversation about X (or their own
  * thread without patientId).
  */
 export async function DELETE(req: NextRequest) {

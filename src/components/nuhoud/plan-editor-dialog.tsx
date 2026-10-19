@@ -54,7 +54,7 @@ function limbFrom(plan: PlanEditorPlan | null, side?: string): TargetLimb {
 }
 
 /**
- * PlanEditorDialog — the doctor sets what the majlis game asks of a patient: the arm elevation
+ * The doctor sets what the majlis game asks of a patient: the arm elevation
  * the targets sit at, how many tasks end a session, and which hand is tracked. Saving creates a
  * new plan that replaces the active one (POST /api/v2/patients/[id]/plans).
  */

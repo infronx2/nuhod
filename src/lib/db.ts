@@ -30,8 +30,7 @@ export const db =
   globalForPrisma.prisma ??
   new PrismaClient({
     datasourceUrl: serverlessDatabaseUrl(process.env.DATABASE_URL),
-    // Quiet logs — 'query' floods the dev.log and contributes to dev-server
-    // OOMs in this sandbox. Keep only warnings + errors.
+    // Query logging is too noisy, warnings and errors are enough.
     log: ['warn', 'error'],
   })
 

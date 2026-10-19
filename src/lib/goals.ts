@@ -1,5 +1,5 @@
 /**
- * Nuhoud rehabilitation goals — doctor-set milestones (ROM target, rep
+ * Nuhoud rehabilitation goals, doctor-set milestones (ROM target, rep
  * count, accuracy, streak) that a patient works toward. When a session is
  * saved, this lib updates the currentValue of any unachieved goals and
  * marks them achieved + fires a celebration notification.
@@ -34,7 +34,7 @@ export async function updateGoalsOnSession(
     if (g.type === 'rom_target') {
       newValue = Math.max(g.currentValue, session.maxAchievedAngle)
     } else if (g.type === 'rep_count') {
-      // rep_count goals track the total reps done — we add this session's.
+      // rep_count goals track the total reps done, we add this session's.
       // (We treat currentValue as a running sum the caller maintains; here
       // we just take the max of the session's reps for simplicity, since
       // the doctor usually means "X reps in one session".)

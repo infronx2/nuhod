@@ -1,17 +1,17 @@
 import { db } from '@/lib/db'
 
 /**
- * Nuhoud gamification — checks a patient's full history and awards any
+ * Nuhoud gamification, checks a patient's full history and awards any
  * newly-earned badges. Idempotent: returns only badges that were actually
  * inserted in this call (the EarnedBadge table has a unique(userId, slug)).
  *
  * Badge catalog (Phase 2 starter set):
- *  - first_session   — completed the very first rehab session
- *  - ten_reps        — accumulated >= 10 total reps across all sessions
- *  - hundred_reps    — accumulated >= 100 total reps across all sessions
- *  - perfect_form    — completed a session with zero compensation errors
- *  - streak_3        — completed sessions on 3 distinct calendar days
- *  - sharpshooter    — reached >= 150° elbow flexion in any session
+ *  - first_session  , completed the very first rehab session
+ *  - ten_reps       , accumulated >= 10 total reps across all sessions
+ *  - hundred_reps   , accumulated >= 100 total reps across all sessions
+ *  - perfect_form   , completed a session with zero compensation errors
+ *  - streak_3       , completed sessions on 3 distinct calendar days
+ *  - sharpshooter   , reached >= 150° elbow flexion in any session
  */
 export interface BadgeDef {
   slug: string

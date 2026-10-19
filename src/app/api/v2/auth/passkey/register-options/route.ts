@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { challengeToken, relyingParty, RP_NAME } from '@/lib/passkeys'
 
-// POST /api/v2/auth/passkey/register-options — signed in; starts adding Face ID / fingerprint.
+// POST /api/v2/auth/passkey/register-options: signed in; starts adding Face ID / fingerprint.
 export async function POST(req: NextRequest) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

@@ -31,7 +31,7 @@ interface CompTrendChartProps {
 }
 
 /**
- * CompTrendChart — per-session compensation-error trend on the patient
+ * Per-session compensation-error trend on the patient
  * detail page. Shows two layers:
  *  - An amber area + line of the rolling 5-session average (smoothed trend).
  *  - Rose scatter dots of the raw per-session compensation-error count.
@@ -42,7 +42,7 @@ interface CompTrendChartProps {
  * regression.
  *
  * Clinical rationale: tracking compensation (shoulder shrugging) over time
- * is the single most useful leading indicator of motor-recovery plateaus —
+ * is the single most useful leading indicator of motor-recovery plateaus -
  * patients often compensate MORE before they plateau, so a rising trend
  * warrants an early plan adjustment.
  */

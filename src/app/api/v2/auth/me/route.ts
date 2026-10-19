@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { publicUser } from '@/lib/patient-accounts'
 
-// GET /api/v2/auth/me — returns the current authenticated user.
+// GET /api/v2/auth/me: returns the current authenticated user.
 export async function GET(req: NextRequest) {
   const payload = getUserFromRequest(req)
   if (!payload) {

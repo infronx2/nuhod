@@ -5,7 +5,7 @@ import { motion, useMotionValue, animate as framerAnimate } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 /**
- * AnimatedKpi — KPI tile that counts up from 0 to `value` on mount.
+ * KPI tile that counts up from 0 to `value` on mount.
  *
  * Uses framer-motion's `useMotionValue` + `animate` for a smooth rAF-driven
  * counter. Renders the formatted value via children, or a default format.

@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { CONSENT_VERSION } from '@/lib/patient-accounts'
 
-// POST /api/v2/me/consent — the patient agreed to the information screen in the app.
+// POST /api/v2/me/consent: the patient agreed to the information screen in the app.
 export async function POST(req: NextRequest) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

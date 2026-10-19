@@ -28,7 +28,7 @@ const dayNames = () => Array.from({ length: 7 }, (_, i) => new Date(2026, 0, 4 +
 const monthNames = () => Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleDateString((document.documentElement.lang === 'ar' ? 'ar-OM' : 'en-GB'), { month: 'short' }))
 
 /**
- * ActivityHeatmap — a GitHub-style calendar heatmap showing reps per day
+ * A GitHub-style calendar heatmap showing reps per day
  * over the last N weeks. 7 rows (days of week) × N columns (weeks).
  *
  * Color scale (primary blue, accessibility-safe):
@@ -81,7 +81,7 @@ export function ActivityHeatmap({ patientId, weeks = 12, title = 'Activity heatm
     columns.push(cells.slice(i, i + 7))
   }
 
-  // Month labels: for each column, the month of its first cell's date — but
+  // Month labels: for each column, the month of its first cell's date, but
   // only show when the month changes (to avoid label clutter).
   const monthLabels: Array<{ col: number; label: string }> = []
   let lastMonth = -1

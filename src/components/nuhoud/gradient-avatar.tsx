@@ -4,7 +4,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * GradientAvatar — renders the user's avatar as a deterministic CSS gradient
+ * Renders the user's avatar as a deterministic CSS gradient
  * using their `avatarSeed` hex color (from the User table). Falls back to a
  * primary gradient when no seed is provided. The user's initials (first letter of
  * the first two name tokens) are overlaid in white bold.

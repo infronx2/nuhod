@@ -17,12 +17,12 @@ interface ConfettiOverlayProps {
 const COLORS = ['#0B5394', '#10B981', '#334155', '#64748B', '#3B82C4', '#0F172A']
 
 /**
- * ConfettiOverlay — a lightweight canvas-based confetti burst that renders
+ * A lightweight canvas-based confetti burst that renders
  * in a portal (so it covers the whole viewport). Fires when `active` flips
  * to true. Self-cleans after ~2.5s.
  *
  * Used to celebrate goal achievements and streak milestones. No external
- * library — just requestAnimationFrame + a simple particle system.
+ * library, just requestAnimationFrame + a simple particle system.
  */
 export function ConfettiOverlay({ active, onDone, headline, subheadline }: ConfettiOverlayProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null)

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 
-// SSE requires streaming — disable Next.js's static optimization.
+// SSE requires streaming, disable Next.js's static optimization.
 export const dynamic = 'force-dynamic'
 
 /**
@@ -16,8 +16,8 @@ export const dynamic = 'force-dynamic'
  *   - First message: `hello` event with the current unread count (so the
  *     bell hydrates immediately on connect).
  *   - Then a `notification` event for each NEW notification (polled from
- *     the DB every 5s — the cheapest "push" that works without a real
- *     message bus in the sandbox).
+ *     the DB every 5s, the cheapest "push" that works without a
+ *     message bus).
  *   - A `ping` comment every 15s to keep the connection alive through
  *     proxies.
  *
@@ -46,14 +46,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 1. Hello — current unread count so the bell hydrates immediately.
+      // 1. Hello, current unread count so the bell hydrates immediately.
       try {
         const unreadCount = await db.notification.count({
           where: { userId, read: false },
         })
         send('hello', { unreadCount, ts: Date.now() })
       } catch {
-        /* db error — non-fatal */
+        /* db error, non-fatal */
       }
 
       // 2. Track the latest notification id we've seen so we only push new ones.
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
         /* non-fatal */
       }
 
-      // 3. Polling loop — check every 5s for new notifications.
+      // 3. Polling loop, check every 5s for new notifications.
       const POLL_MS = 5000
       const interval = setInterval(async () => {
         try {
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
             clearInterval(interval)
           }
         } catch {
-          /* db error — keep the loop alive */
+          /* db error, keep the loop alive */
         }
       }, POLL_MS)
 
@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
       ;(controller as any)._nmCleanup = () => clearInterval(interval)
     },
     cancel() {
-      // Client disconnected — cleanup happens via the interval's own try/catch.
+      // Client disconnected, cleanup happens via the interval's own try/catch.
     },
   })
 

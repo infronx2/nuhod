@@ -13,8 +13,8 @@ import { useAuth, AuthProvider } from '@/hooks/use-auth'
 import { useTranslations, useLocale } from 'next-intl'
 
 /**
- * PatientDashboard — the patient's view: a single page built around starting today's majlis
- * session (see PatientHome), with the AI coach one tap away.
+ * The patient's view: a single page built around starting today's majlis
+ * session (see PatientHome), with Mu'in one tap away.
  */
 function PatientDashboard() {
   const locale = useLocale()
@@ -35,7 +35,7 @@ function PatientDashboard() {
 }
 
 /**
- * DoctorView — the authenticated doctor's view. Wraps DoctorDashboard with
+ * The authenticated doctor's view. Wraps DoctorDashboard with
  * the standard header + footer chrome. Doctors have no live tracking panel
  * (they review patients, not their own rehab), so we don't mount the
  * pose-tracking hook here.
@@ -60,7 +60,7 @@ function DoctorView() {
 }
 
 /**
- * LoadingGate — spinner shown while the auth hook re-validates the persisted
+ * Spinner shown while the auth hook re-validates the persisted
  * JWT on first mount.
  */
 function LoadingGate() {
@@ -73,7 +73,7 @@ function LoadingGate() {
 }
 
 /**
- * Home — root route. Wraps the whole app in <AuthProvider> and routes
+ * Root route. Wraps the whole app in <AuthProvider> and routes
  * between the AuthScreen (unauthenticated), the patient dashboard, and the
  * doctor dashboard based on the authenticated user's role.
  */

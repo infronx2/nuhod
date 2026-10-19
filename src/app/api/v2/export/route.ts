@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 import { isStaff, staffPatientWhere } from '@/lib/access'
 import { audit } from '@/lib/audit'
 
-// GET /api/v2/export?kind=sessions|measures — the doctor's trial data as CSV for analysis.
+// GET /api/v2/export?kind=sessions|measures: the doctor's trial data as CSV for analysis.
 // Patients appear as P001, P002... in the order they joined; no names, usernames or emails.
 export async function GET(req: NextRequest) {
   const payload = getUserFromRequest(req)

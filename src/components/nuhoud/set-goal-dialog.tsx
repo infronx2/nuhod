@@ -42,7 +42,7 @@ const GOAL_TYPES = [
 ]
 
 /**
- * SetGoalDialog — a doctor-facing dialog for creating a rehabilitation goal
+ * A doctor-facing dialog for creating a rehabilitation goal
  * for a patient. Lets the doctor pick the goal type (ROM, reps, accuracy,
  * streak), set a target value via a slider, and optionally add a title.
  * On submit, POSTs to /api/v2/goals and toasts the result.

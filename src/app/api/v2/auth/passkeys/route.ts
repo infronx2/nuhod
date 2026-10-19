@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 
-// GET /api/v2/auth/passkeys — the caller's own passkeys. DELETE ?id= removes one (lost phone).
+// GET /api/v2/auth/passkeys: the caller's own passkeys. DELETE ?id= removes one (lost phone).
 export async function GET(req: NextRequest) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })

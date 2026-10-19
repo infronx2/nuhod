@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
   })
 }
 
-// POST /api/v2/patients — a doctor adds a patient they will follow.
+// POST /api/v2/patients: a doctor adds a patient they will follow.
 // Body: { name, affectedSide?, dateOfBirth?, username?, consentSigned: true, screening: { [item]: boolean } }
 // Returns the username, a 6-digit PIN (shown once) and a one-time QR sign-in token.
 export async function POST(req: NextRequest) {

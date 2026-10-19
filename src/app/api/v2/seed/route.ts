@@ -9,9 +9,9 @@ import { hashPassword } from '@/lib/auth'
  * sessions so the doctor dashboard isn't empty on first load.
  *
  * Demo accounts (password = "demo1234" for all):
- *   doctor@nuhoud.health   — DOCTOR
- *   layla@nuhoud.health    — PATIENT (right-side affected, lots of sessions)
- *   omar@nuhoud.health     — PATIENT (left-side affected, fewer sessions)
+ *   doctor@nuhoud.health  , DOCTOR
+ *   layla@nuhoud.health   , PATIENT (right-side affected, lots of sessions)
+ *   omar@nuhoud.health    , PATIENT (left-side affected, fewer sessions)
  */
 export async function POST() {
   // Creates logins with a published password, so it only exists for local development.

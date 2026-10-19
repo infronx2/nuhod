@@ -27,7 +27,7 @@ interface DoctorAnalyticsProps {
 }
 
 /**
- * DoctorAnalytics — a 2-up analytics card for the doctor dashboard:
+ * A 2-up analytics card for the doctor dashboard:
  *  - Left: accuracy distribution histogram (how sessions spread across
  *    0-20%, 20-40%, ..., 80-100% accuracy buckets).
  *  - Right: plan-adherence gauge (sessions this week vs the plan's

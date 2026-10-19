@@ -86,7 +86,7 @@ function ageFrom(dob: string | null | undefined, fmt: (n: number) => string): st
 }
 
 /**
- * PatientDetail — full clinical view of one patient.
+ * Full clinical view of one patient.
  *
  * Header: avatar, name, age (from dateOfBirth), affected side, email,
  * "Back to roster" button.
@@ -519,7 +519,6 @@ export function PatientDetail({ patientId, onBack, onPlanCreated }: PatientDetai
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
 // ---------------------------------------------------------------------------
 
 function KpiTile({

@@ -5,7 +5,7 @@ import * as React from 'react'
 const MAX_TILT_DEG = 4
 
 /**
- * DepthLayer — one pointer listener for the whole page that tilts the [data-tilt] element under the
+ * One pointer listener for the whole page that tilts the [data-tilt] element under the
  * pointer toward it (CSS variables --rx / --ry, see globals.css). Mounted once in the root layout;
  * touch screens and reduced-motion users get no tilt.
  */

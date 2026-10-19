@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
- * POST /api/v2/locale — set the locale cookie.
+ * POST /api/v2/locale: set the locale cookie.
  * Body: { locale: "ar" | "en" }
  *
  * Sets the 'nuhoud-locale' cookie so next-intl's request config picks it up

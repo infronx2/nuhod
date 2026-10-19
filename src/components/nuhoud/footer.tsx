@@ -5,7 +5,7 @@ import { HeartPulse } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 
 interface FooterProps {
-  /** Legacy prop — RTL is now determined by locale automatically. */
+  /** Legacy prop, RTL is now determined by locale automatically. */
   rtl?: boolean
 }
 

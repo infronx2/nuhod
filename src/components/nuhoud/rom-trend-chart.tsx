@@ -34,7 +34,7 @@ function formatSessionDate(iso: string): string {
 }
 
 /**
- * RomTrendChart — line chart of maxAchievedAngle across recent sessions.
+ * Line chart of maxAchievedAngle across recent sessions.
  * Shows range-of-motion progress over time, with an optional target-angle
  * reference line (from the patient's active treatment plan).
  *

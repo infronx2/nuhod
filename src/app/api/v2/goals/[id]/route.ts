@@ -4,7 +4,7 @@ import { getUserFromRequest, requireRole } from '@/lib/auth'
 import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@/lib/access'
 
 /**
- * DELETE /api/v2/goals/[id] — delete a rehabilitation goal.
+ * DELETE /api/v2/goals/[id]: delete a rehabilitation goal.
  * Doctors + admins only. The goal must belong to a patient (we verify
  * ownership by looking up the goal's patientId before deleting).
  */

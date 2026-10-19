@@ -5,7 +5,7 @@ import { canAccessPatient, isStaff } from '@/lib/access'
 import { audit } from '@/lib/audit'
 import { PATIENT_EMAIL_DOMAIN } from '@/lib/patient-accounts'
 
-// GET /api/v2/patients/[id] — patient profile + active plan + recent sessions.
+// GET /api/v2/patients/[id]: patient profile + active plan + recent sessions.
 // The patient's own doctor (or an admin) and the patient themselves.
 export async function GET(
   req: NextRequest,

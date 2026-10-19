@@ -35,7 +35,6 @@ export async function GET(req: NextRequest) {
   const weeks = Math.min(Math.max(parseInt(url.searchParams.get('weeks') || '12', 10) || 12, 4), 52)
   const patientIdParam = url.searchParams.get('patientId')
 
-  // Build the "where" clause.
   let where: any
   if (patientIdParam) {
     if (await canAccessPatient(payload, patientIdParam)) {
@@ -69,7 +68,6 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  // Aggregate per calendar day.
   const byDay = new Map<string, { reps: number; sessions: number }>()
   for (const s of sessions) {
     const key = s.sessionDate.toISOString().slice(0, 10)

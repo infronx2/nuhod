@@ -24,7 +24,7 @@ interface DoctorDashboardProps {
 }
 
 /**
- * DoctorDashboard — the doctor's main view.
+ * The doctor's main view.
  *
  * Top: KPI tiles. Then the patient roster table (patients needing attention first), where each
  * row opens the patient's detail or the plan editor. Clinic-wide analytics and the exercise
@@ -74,7 +74,7 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
       const data = await apiFetch<V2Stats>('/api/v2/stats')
       setGlobalStats(data)
     } catch {
-      /* silent — KPIs degrade to 0 */
+      /* silent, KPIs degrade to 0 */
     }
   }, [])
 

@@ -5,7 +5,7 @@ import { ApiError, apiFetch, getToken, setToken } from '@/lib/api'
 import type { V2User } from '@/lib/v2-types'
 
 /**
- * useAuth — React context that owns the Nuhoud JWT auth lifecycle.
+ * useAuth, React context that owns the Nuhoud JWT auth lifecycle.
  *
  * On mount, loads a token from localStorage and validates it against
  * /api/v2/auth/me. Exposes login/register/logout and the current user.

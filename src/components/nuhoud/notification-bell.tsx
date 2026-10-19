@@ -48,7 +48,7 @@ const SEVERITY_COLOR: Record<string, string> = {
 }
 
 /**
- * NotificationBell — a header bell icon with an unread-count badge and a
+ * A header bell icon with an unread-count badge and a
  * dropdown feed. Uses Server-Sent Events (SSE) for real-time delivery: a
  * persistent EventSource connection pushes new notifications the moment they're
  * created, so there's no 30s polling delay. Falls back to an initial fetch
@@ -75,7 +75,7 @@ export function NotificationBell() {
         setUnread(data.unreadCount)
       }
     } catch {
-      /* silent — notifications are best-effort */
+      /* silent, notifications are best-effort */
     }
   }, [user])
 
@@ -111,10 +111,10 @@ export function NotificationBell() {
         // fallback below keeps the feed fresh.
       }
     } catch {
-      // EventSource not available (SSR) — the fallback poll handles it.
+      // EventSource not available (SSR), the fallback poll handles it.
     }
 
-    // Fallback poll (slower — 30s) in case SSE isn't available or drops.
+    // Fallback poll (slower, 30s) in case SSE isn't available or drops.
     const pollId = window.setInterval(() => {
       if (!open) void fetchNotifications()
     }, POLL_MS)

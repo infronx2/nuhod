@@ -5,7 +5,7 @@ import { canAccessPatient, isStaff } from '@/lib/access'
 import { audit } from '@/lib/audit'
 import { issueLoginToken, newPin } from '@/lib/patient-accounts'
 
-// POST /api/v2/patients/[id]/credentials — the patient's doctor manages how they sign in.
+// POST /api/v2/patients/[id]/credentials: the patient's doctor manages how they sign in.
 // Body: { action: 'reset-pin' | 'qr' | 'remove-passkeys' | 'deactivate' | 'activate' }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)

@@ -18,7 +18,7 @@ interface WeeklyInsightsData {
 }
 
 /**
- * WeeklyInsights — a patient-facing card summarizing the last 7 days:
+ * A patient-facing card summarizing the last 7 days:
  * reps/sessions/accuracy vs last week (with up/down deltas), the best
  * session, and a deterministic clinical recommendation.
  */

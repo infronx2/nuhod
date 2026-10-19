@@ -13,7 +13,7 @@ import { createNotification, notifyBadgesEarned } from '@/lib/notifications'
  * app mid-session).
  *
  * Auth: a shared `X-Nuhoud-Key` header (the dev secret is deterministic;
- * production rotates via env). NOT a JWT — the pose-server doesn't hold
+ * production rotates via env). NOT a JWT, the pose-server doesn't hold
  * patient credentials, so it authenticates as a trusted internal service.
  *
  * Body: {

@@ -2,7 +2,7 @@ import { getRequestConfig } from 'next-intl/server'
 import { cookies } from 'next/headers'
 
 /**
- * next-intl request config — supports both Arabic and English.
+ * next-intl request config, supports both Arabic and English.
  *
  * The locale is stored in a cookie named 'nuhoud-locale' (default: 'ar').
  * The user toggles between Arabic and English via the header language button,
@@ -24,7 +24,7 @@ export default getRequestConfig(async () => {
       locale = stored as Locale
     }
   } catch {
-    // cookies() not available in some contexts — default to 'ar'.
+    // cookies() not available in some contexts, default to 'ar'.
   }
 
   return {

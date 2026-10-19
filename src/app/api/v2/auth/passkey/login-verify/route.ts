@@ -6,7 +6,7 @@ import { addressKey, lockedMinutes, recordFailure } from '@/lib/rate-limit'
 import { readChallenge, relyingParty } from '@/lib/passkeys'
 import { signInResponse } from '@/lib/patient-accounts'
 
-// POST /api/v2/auth/passkey/login-verify — Body: { response, challengeToken }
+// POST /api/v2/auth/passkey/login-verify. Body: { response, challengeToken }
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const address = addressKey(clientIp(req))

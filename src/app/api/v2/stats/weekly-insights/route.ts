@@ -8,7 +8,7 @@ import { canAccessPatient, isStaff, staffPatientIds, staffPatientWhere } from '@
  *
  * Generates a weekly recap: this week's reps/sessions/accuracy vs last week,
  * the streak state, the best session, and a coach-style recommendation
- * string (computed, not LLM — fast and deterministic).
+ * string (computed, not LLM, fast and deterministic).
  */
 export async function GET(req: NextRequest) {
   const payload = getUserFromRequest(req)

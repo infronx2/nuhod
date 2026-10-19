@@ -4,7 +4,7 @@ import { audit, clientIp } from '@/lib/audit'
 import { addressKey, lockedMinutes, recordFailure } from '@/lib/rate-limit'
 import { hashToken, signInResponse } from '@/lib/patient-accounts'
 
-// POST /api/v2/auth/qr — Body: { token } from the QR code the doctor showed. Single use, 24 hours.
+// POST /api/v2/auth/qr. Body: { token } from the QR code the doctor showed. Single use, 24 hours.
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const token = typeof body?.token === 'string' ? body.token.trim() : ''

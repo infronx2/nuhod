@@ -36,7 +36,7 @@ function formatDayShort(iso: string): string {
 }
 
 /**
- * ActivityChart — 7-day bar chart of reps per day from /api/v2/stats.
+ * ActivityChart: 7-day bar chart of reps per day from /api/v2/stats.
  * Teal bars with a hover tooltip and responsive sizing.
  */
 export function ActivityChart({ data, loading }: ActivityChartProps) {

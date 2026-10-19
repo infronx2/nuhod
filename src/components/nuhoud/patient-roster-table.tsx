@@ -35,7 +35,7 @@ function statusOf(p: V2PatientSummary): V2PatientStatus {
 }
 
 /**
- * PatientRosterTable — every patient on one screen, sorted so the ones needing attention come
+ * Every patient on one screen, sorted so the ones needing attention come
  * first. Status, ROM trend and compensation come from GET /api/v2/patients (indicators).
  */
 export function PatientRosterTable({ patients, loading, onView, onEditPlan, onRefresh }: PatientRosterTableProps) {
