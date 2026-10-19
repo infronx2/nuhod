@@ -35,10 +35,10 @@ export async function GET(req: NextRequest) {
     ])
   } else {
     const measures = await db.outcomeMeasure.findMany({ where: { patientId: { in: ids } }, orderBy: { measuredAt: 'asc' } })
-    header = ['patient', 'affected_side', 'measured_at', 'timepoint', 'instrument', 'side', 'value', 'notes']
+    header = ['patient', 'affected_side', 'measured_at', 'timepoint', 'instrument', 'side', 'value']
     rows = measures.map((m) => [
       code.get(m.patientId)!, info.get(m.patientId)?.affectedSide ?? '', m.measuredAt.toISOString(), m.timepoint, m.instrument,
-      m.side, m.value, m.notes,
+      m.side, m.value,
     ])
   }
   await audit(req, { actorId: payload.sub, action: 'export', detail: `${kind}: ${rows.length} rows` })

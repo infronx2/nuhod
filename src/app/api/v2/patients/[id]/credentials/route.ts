@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   switch (body?.action) {
     case 'reset-pin': {
       const pin = newPin()
-      await db.user.update({ where: { id }, data: { pinHash: hashPassword(pin) } })
+      await db.user.update({ where: { id }, data: { pinHash: hashPassword(pin), tokenVersion: { increment: 1 } } })
       await db.authAttempt.deleteMany({ where: { key: { in: await accountKeys(id) } } })
       await audit(req, { actorId: payload.sub, action: 'pin_reset', patientId: id })
       return NextResponse.json({ ok: true, pin })
@@ -30,12 +30,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
     case 'remove-passkeys': {
       const { count } = await db.passkey.deleteMany({ where: { userId: id } })
+      await db.user.update({ where: { id }, data: { tokenVersion: { increment: 1 } } })
       await audit(req, { actorId: payload.sub, action: 'passkey_removed', patientId: id, detail: `${count} removed by doctor` })
       return NextResponse.json({ ok: true, removed: count })
     }
     case 'deactivate':
     case 'activate': {
-      await db.user.update({ where: { id }, data: { active: body.action === 'activate' } })
+      await db.user.update({ where: { id }, data: { active: body.action === 'activate', tokenVersion: { increment: 1 } } })
       if (body.action === 'deactivate') await db.loginToken.deleteMany({ where: { userId: id, usedAt: null } })
       await audit(req, { actorId: payload.sub, action: 'patient_updated', patientId: id, detail: body.action })
       return NextResponse.json({ ok: true })
@@ -48,5 +49,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 /** The lockout keys of this patient's sign-in names, so a new PIN works at once. */
 async function accountKeys(id: string) {
   const u = await db.user.findUnique({ where: { id }, select: { username: true, email: true } })
-  return [u?.username, u?.email].filter(Boolean).map((v) => `acct:${v}`)
+  return [id, u?.username, u?.email].filter(Boolean).map((v) => `acct:${v}`)
 }

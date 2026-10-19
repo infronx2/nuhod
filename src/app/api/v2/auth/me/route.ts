@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
   }
   const user = await db.user.findUnique({ where: { id: payload.sub } })
-  if (!user || !user.active) {
+  if (!user || !user.active || user.tokenVersion !== (payload.tv ?? 0)) {
     return NextResponse.json({ ok: false, error: 'user not found' }, { status: 404 })
   }
   return NextResponse.json({ ok: true, user: publicUser(user) })

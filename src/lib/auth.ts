@@ -19,6 +19,7 @@ export interface AuthUser {
   role: string
   email: string
   name: string
+  tokenVersion?: number
 }
 
 export interface NeuromoveJwtPayload extends JwtPayload {
@@ -26,6 +27,7 @@ export interface NeuromoveJwtPayload extends JwtPayload {
   role: string
   email: string
   name: string
+  tv?: number
 }
 
 export function hashPassword(plain: string): string {
@@ -48,6 +50,7 @@ export function signToken(user: AuthUser): string {
       role: user.role,
       email: user.email,
       name: user.name,
+      tv: user.tokenVersion ?? 0,
     },
     secret(),
     { expiresIn: user.role.toUpperCase() === 'PATIENT' ? PATIENT_TTL_SECONDS : STAFF_TTL_SECONDS, algorithm: 'HS256' },

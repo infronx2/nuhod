@@ -13,5 +13,5 @@ export const TIMEPOINTS = ['baseline', 'mid', 'end', 'other'] as const
 export type Timepoint = (typeof TIMEPOINTS)[number]
 
 export function isInstrument(v: unknown): v is Instrument {
-  return typeof v === 'string' && v in INSTRUMENTS
+  return typeof v === 'string' && Object.hasOwn(INSTRUMENTS, v)
 }

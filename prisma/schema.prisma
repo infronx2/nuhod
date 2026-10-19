@@ -30,6 +30,8 @@ model User {
   /// a one-time QR code, or a passkey (Face ID / fingerprint). Doctors keep email and password.
   username          String?   @unique
   pinHash           String?
+  /// Raised when the account is paused, the PIN is reset or passkeys are removed; older tokens stop working.
+  tokenVersion      Int       @default(0)
   /// The doctor following this patient; only they (and admins) see the patient's records.
   doctorId          String?
   doctor            User?     @relation("DoctorPatients", fields: [doctorId], references: [id])

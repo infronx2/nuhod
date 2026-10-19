@@ -57,5 +57,5 @@ export function publicUser(user: User) {
 }
 
 export function signInResponse(user: User) {
-  return { ok: true, token: signToken({ id: user.id, role: user.role, email: user.email, name: user.name }), user: publicUser(user) }
+  return { ok: true, token: signToken({ id: user.id, role: user.role, email: user.email, name: user.name, tokenVersion: user.tokenVersion }), user: publicUser(user) }
 }

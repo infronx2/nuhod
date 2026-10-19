@@ -21,8 +21,8 @@ export async function POST(req: NextRequest) {
       response: body.response, expectedChallenge: challenge.challenge, expectedOrigin: origin, expectedRPID: rpID,
       requireUserVerification: true,
     })
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'verification failed' }, { status: 400 })
+  } catch {
+    return NextResponse.json({ ok: false, error: 'verification failed' }, { status: 400 })
   }
   if (!verification.verified) return NextResponse.json({ ok: false, error: 'verification failed' }, { status: 400 })
   const { credential } = verification.registrationInfo
