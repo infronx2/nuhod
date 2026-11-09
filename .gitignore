@@ -63,3 +63,10 @@ __pycache__/
 
 # MediaPipe WASM, copied from node_modules on install (scripts/copy-play-wasm.mjs)
 /public/play/wasm/
+.asset-cache/
+
+# Local hand-tracking test videos (not part of the app)
+public/play/test-videos/
+
+# Holistic model (?holistic test option): loaded from Google when this local copy is missing
+/public/play/models/holistic_landmarker.task

@@ -41,6 +41,43 @@ class SideState {
   dwellTime = 0
   prevPalm: THREE.Vector3 | null = null
   palmVelocity = new THREE.Vector3()
+  /** The hand's closure when opened as far as the patient can (from the calibration; 0 if none). */
+  openClosure = 0
+  /** The last moment both the arm and the hand were seen: the arm then, and the hand in the image. */
+  anchor: { arm: ArmSample; image: NonNullable<HandSample['image']>; t: number } | null = null
+}
+
+/**
+ * Hand seen, arm lost (the hand close to the camera hides the face and shoulder from the body
+ * model): the arm as last seen, moved by how far the hand has moved in the camera image since.
+ * Across the image the hand's own size gives the scale (its real length over its length in the
+ * image = centimetres per image width at its depth); toward the camera its growth gives the depth,
+ * assuming a usual 60° webcam, damped since that guess is rough. For display only: the therapy
+ * angles keep coming from the body model.
+ */
+const HAND_ONLY_HOLD_S = 4
+const WEBCAM_FOCAL = 0.5 / Math.tan(THREE.MathUtils.degToRad(30))
+const DEPTH_TRUST = 0.7
+const MAX_DEPTH_SHIFT_CM = 40
+
+function armFromImage(anchor: NonNullable<SideState['anchor']>, now: NonNullable<HandSample['image']>): ArmSample {
+  const a = anchor.image
+  const len = (a.lengthCm + now.lengthCm) / 2
+  const at = (p: NonNullable<HandSample['image']>) => {
+    const widthCm = len / Math.max(p.size, 1e-3)
+    return [(p.x - 0.5) * widthCm, (p.y - 0.5) * widthCm * p.aspect, WEBCAM_FOCAL * widthCm]
+  }
+  const [xa, ya, za] = at(a), [xn, yn, zn] = at(now)
+  // Image right is the patient's left, image down is down, nearer the camera is forward.
+  const fwd = THREE.MathUtils.clamp(-(zn - za) * DEPTH_TRUST, -MAX_DEPTH_SHIFT_CM, MAX_DEPTH_SHIFT_CM)
+  const d: [number, number, number] = [fwd, -(xn - xa), -(yn - ya)]
+  const w = anchor.arm.wrist, e = anchor.arm.elbow
+  return {
+    ...anchor.arm,
+    wrist: [w[0] + d[0], w[1] + d[1], w[2] + d[2]],
+    // The elbow follows part of the way, so the forearm turns rather than slides.
+    elbow: [e[0] + d[0] * 0.5, e[1] + d[1] * 0.5, e[2] + d[2] * 0.5],
+  }
 }
 
 export class HandInput {
@@ -57,15 +94,29 @@ export class HandInput {
       st.lastArm = now
     }
     if (hand.tracked) {
-      st.hand = hand
+      // Hands overlapping: the finger points are guesses, so keep the last good shape (and grip).
+      if (!hand.occluded || !st.hand) st.hand = hand
       st.lastHand = now
     }
+    if (arm?.tracked && hand.tracked && hand.image) st.anchor = { arm, image: hand.image, t: now }
   }
 
   isVisible(side: Side) { return this.hands[side].visible }
   palm(side: Side) { return this.hands[side].palm }
   holding(side: Side) { return this.s[side].held }
   closure(side: Side) { return this.s[side].closure }
+  pinchCm(side: Side) { return this.s[side].hand?.pinchCm ?? 99 }
+
+  /**
+   * This patient's range for one hand, from the calibration: the fist threshold sits between their
+   * most open and most closed hand, and the pinch threshold just above their closest pinch.
+   */
+  calibrate(side: Side, range: { open: number; fist: number; pinchCm: number }) {
+    const st = this.s[side]
+    st.openClosure = range.open
+    st.closureCeiling = Math.max(st.closureCeiling, range.fist)
+    if (range.pinchCm < 30) st.pinchFloor = range.pinchCm
+  }
 
   update(now: number, dt: number) {
     for (const side of ['right', 'left'] as Side[]) {
@@ -76,13 +127,17 @@ export class HandInput {
 
   private updateHand(side: Side, now: number, dt: number) {
     const st = this.s[side], h = this.hands[side]
-    const fresh = now - st.lastArm < TRACKING_GRACE_S && this.active[side] && st.arm
-    h.setVisible(!!fresh)
-    if (!fresh || !st.arm) return
     const handFresh = now - st.lastHand < TRACKING_GRACE_S
+    let arm = now - st.lastArm < TRACKING_GRACE_S && this.active[side] ? st.arm : null
+    // Arm lost but the hand still seen: keep the hand on screen, moving with the camera image.
+    if (!arm && this.active[side] && handFresh && st.anchor && st.hand?.image && now - st.anchor.t < HAND_ONLY_HOLD_S) {
+      arm = armFromImage(st.anchor, st.hand.image)
+    }
+    h.setVisible(!!arm)
+    if (!arm) return
     // Keep a closed hand closed through finger dropouts so a held object is not shown slipping out.
     const keepLast = !handFresh && st.held && st.hand
-    h.update(st.arm, handFresh || keepLast ? st.hand : null, dt)
+    h.update(arm, handFresh || keepLast ? st.hand : null, dt)
   }
 
   private updateGripState(st: SideState, now: number, dt: number) {
@@ -90,7 +145,12 @@ export class HandInput {
     st.closure = closureOf(st.hand.curls)
     // The grasp threshold follows the patient's best recent closure, so a weak grip still registers.
     st.closureCeiling = Math.max(st.closure, st.closureCeiling - dt * CLOSURE_CEILING_DECAY)
-    st.graspOn = THREE.MathUtils.clamp(st.closureCeiling * 0.62, 0.3, 0.55)
+    // Calibrated: 62% of the way from this patient's open hand to their best fist (a hand that
+    // cannot open fully still has to close clearly). Otherwise from 0, as before.
+    const base = st.openClosure
+    st.graspOn = base > 0
+      ? THREE.MathUtils.clamp(base + (st.closureCeiling - base) * 0.62, Math.max(0.18, base + 0.08), 0.55)
+      : THREE.MathUtils.clamp(st.closureCeiling * 0.62, 0.3, 0.55)
     const graspOff = st.graspOn * 0.6
     // Cameras rarely measure touching fingertips as touching: the pinch threshold sits just above the patient's best pinch.
     st.pinchFloor = Math.min(st.hand.pinchCm, st.pinchFloor + dt * PINCH_FLOOR_RISE)
