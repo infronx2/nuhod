@@ -28,6 +28,14 @@ const HANDTEST = typeof window !== 'undefined' && new URLSearchParams(window.loc
 const SIM = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim')
 const HANDTEST_OPEN = HANDTEST && new URLSearchParams(window.location.search).get('handtest') === 'open'
 const HANDCAM = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('handcam')
+/** ?inspect: the camera picture with what Google's models saw drawn over it, and running counts on window.__inspect. */
+const INSPECT = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('inspect')
+/** ?mirror: flip each picture before tracking (a recording saved mirrored, as many selfie videos are). */
+const MIRROR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mirror')
+
+const HAND_LINKS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]]
+const POSE_LINKS = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24]]
 /** ?quality=ultra|high|low pins the render quality (otherwise it adapts to the device's frame rate). */
 const FORCED_QUALITY = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('quality') : null
 
@@ -78,6 +86,10 @@ export class Game {
   private renderFrames = 0
   private renderFpsT = 0
   private qualityChecks = 0
+  private mirrorCanvas: HTMLCanvasElement | null = null
+  private inspectCanvas: HTMLCanvasElement | null = null
+  /** Running counts for ?inspect: frames tracked, and how often the body and each hand were found. */
+  readonly inspect = { frames: 0, body: 0, right: 0, left: 0, both: 0 }
 
   constructor(private container: HTMLElement, private video: HTMLVideoElement, private plan: Plan,
     private onHud: (s: HudState) => void, private onFinish: (reason: 'goal') => void) {
@@ -116,6 +128,13 @@ export class Game {
       { say: (e, i) => this.voice.say(e, i), finish: (r) => this.onFinish(r) }, () => this.arms)
 
     this.buildComposer()
+    if (INSPECT) {
+      const c = document.createElement('canvas')
+      c.style.cssText = 'position:absolute;left:8px;top:64px;width:min(46vw,520px);height:auto;border-radius:12px;border:2px solid #7fd8de;z-index:5;pointer-events:none;background:#000'
+      container.appendChild(c)
+      this.inspectCanvas = c
+      ;(window as unknown as { __inspect: unknown }).__inspect = this.inspect
+    }
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(container)
     this.resize()
@@ -211,8 +230,9 @@ export class Game {
     const camFrame = this.tracker && this.video.readyState >= 2 && this.video.currentTime !== this.lastVideoTime
     if (camFrame || this.sim) {
       this.lastVideoTime = this.video.currentTime
-      const f = this.sim ? this.sim.frame(now, this.director.simTargets()) : this.tracker!.process(this.video, t)
+      const f = this.sim ? this.sim.frame(now, this.director.simTargets()) : this.tracker!.process(MIRROR ? this.mirrored() : this.video, t)
       this.lastFrame = f
+      if (this.inspectCanvas && !this.sim) this.drawInspect(f)
       this.frames++
       for (const side of ['right', 'left'] as Side[]) {
         let arm = f.arms[side]
@@ -278,6 +298,64 @@ export class Game {
       hands: { right: this.input.isVisible('right'), left: this.input.isVisible('left') },
       fps: this.fps,
     })
+  }
+
+  /** The current video picture flipped left to right (?mirror). */
+  private mirrored(): HTMLCanvasElement {
+    const v = this.video
+    const c = (this.mirrorCanvas ??= document.createElement('canvas'))
+    if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
+      c.width = v.videoWidth
+      c.height = v.videoHeight
+    }
+    const g = c.getContext('2d')!
+    g.setTransform(-1, 0, 0, 1, c.width, 0)
+    g.drawImage(v, 0, 0)
+    return c
+  }
+
+  /**
+   * ?inspect: the picture the models were given, with the body (teal) and each hand (right gold, left
+   * blue) as Google's models found them, and what the game made of it: grip, pinch, arm angles.
+   */
+  private drawInspect(f: TrackFrame) {
+    const c = this.inspectCanvas!
+    const src: CanvasImageSource = MIRROR && this.mirrorCanvas ? this.mirrorCanvas : this.video
+    const w = 520, h = Math.round((520 * (this.video.videoHeight || 9)) / (this.video.videoWidth || 16))
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
+    const g = c.getContext('2d')!
+    g.drawImage(src, 0, 0, w, h)
+    const line = (pts: Array<{ x: number; y: number }>, links: number[][], colour: string, width: number) => {
+      g.strokeStyle = colour
+      g.lineWidth = width
+      for (const [a, b] of links) {
+        if (!pts[a] || !pts[b]) continue
+        g.beginPath(); g.moveTo(pts[a].x * w, pts[a].y * h); g.lineTo(pts[b].x * w, pts[b].y * h); g.stroke()
+      }
+      g.fillStyle = colour
+      for (const p of pts) { g.beginPath(); g.arc(p.x * w, p.y * h, width + 1, 0, 7); g.fill() }
+    }
+    if (f.image?.pose) line(f.image.pose, POSE_LINKS, '#7fd8de', 3)
+    if (f.image?.hands.right) line(f.image.hands.right, HAND_LINKS, '#ffcc4d', 2)
+    if (f.image?.hands.left) line(f.image.hands.left, HAND_LINKS, '#58a6ff', 2)
+    const s = this.inspect
+    s.frames++
+    if (f.body) s.body++
+    if (f.hands.right.tracked) s.right++
+    if (f.hands.left.tracked) s.left++
+    if (f.hands.right.tracked && f.hands.left.tracked) s.both++
+    const pct = (n: number) => `${Math.round((100 * n) / s.frames)}%`
+    const arm = (side: Side) => f.arms[side]?.tracked ? `${Math.round(f.arms[side]!.shoulderElevation)}° / ${Math.round(f.arms[side]!.elbowAngle)}°` : '—'
+    const rows = [
+      `body ${f.body ? 'yes' : 'NO'} (${pct(s.body)})  ·  frames ${s.frames}`,
+      `right hand ${f.hands.right.tracked ? 'yes' : 'no'} (${pct(s.right)})  grip ${this.input.describe('right')}  arm ${arm('right')}`,
+      `left hand ${f.hands.left.tracked ? 'yes' : 'no'} (${pct(s.left)})  grip ${this.input.describe('left')}  arm ${arm('left')}`,
+    ]
+    g.fillStyle = 'rgba(0,0,0,0.6)'
+    g.fillRect(0, h - 64, w, 64)
+    g.fillStyle = '#ffffff'
+    g.font = '13px ui-monospace, monospace'
+    rows.forEach((r, i) => g.fillText(r, 8, h - 46 + i * 18))
   }
 
   painStop() {

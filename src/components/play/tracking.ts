@@ -29,12 +29,20 @@ export interface HandSample {
   /** Per finger [mcp, pip, dip] flexion in degrees, thumb first. */
   curls: Array<[number, number, number]>
   pinchCm: number
+  /**
+   * Where the hand is in the camera image: wrist position (0..1 of width and height) and the hand's
+   * size there (wrist to middle knuckle, as a fraction of the image width), with its real length (cm).
+   * Lets the hand keep moving when the body model loses the arm (hand close to the camera).
+   */
+  image?: { x: number; y: number; size: number; aspect: number; lengthCm: number }
 }
 
 export interface TrackFrame {
   body: boolean
   arms: Partial<Record<Side, ArmSample>>
   hands: Record<Side, HandSample>
+  /** What the models saw, in image coordinates (0..1), for the inspection overlay (?inspect). */
+  image?: { pose?: Landmark[]; hands: Partial<Record<Side, Landmark[]>> }
 }
 
 // ── Filtering (One Euro, as in the pose server) ─────────────────────────────
@@ -192,7 +200,7 @@ export class Tracker {
   }
 
   /** Tracks one video frame. Timestamps are forced to increase: MediaPipe's graph stops for good on one that goes back. */
-  process(video: HTMLVideoElement, frameMs: number): TrackFrame {
+  process(video: HTMLVideoElement | HTMLCanvasElement, frameMs: number): TrackFrame {
     const timeMs = Math.max(Math.round(frameMs), this.lastMs + 1)
     this.lastMs = timeMs
     const t = timeMs / 1000
@@ -200,9 +208,11 @@ export class Tracker {
       body: false,
       arms: {},
       hands: { right: emptyHand(), left: emptyHand() },
+      image: { hands: {} },
     }
     const pr = this.pose.detectForVideo(video, timeMs)
     const poseImage = pr.landmarks?.[0]
+    out.image!.pose = poseImage
     if (pr.worldLandmarks?.[0] && poseImage) {
       const raw = pr.worldLandmarks[0]
       const vis = raw.map((p) => p.visibility ?? 1)
@@ -216,10 +226,20 @@ export class Tracker {
       const sides = assignHandSides(hr.landmarks, hr.handedness, poseImage, this.lastWrist)
       for (const [side, i] of Object.entries(sides) as Array<[Side, number]>) {
         this.lastWrist[side] = hr.landmarks[i][0]
+        out.image!.hands[side] = hr.landmarks[i]
         const world = this.handFilters[side].apply(hr.worldLandmarks[i].map((p) => [p.x, p.y, p.z] as Vec), t)
         const Hd = world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 }))
         const { dir, normal } = handFrame(Hd, side)
-        out.hands[side] = { tracked: true, points: Hd, dir, normal, curls: fingerCurls(Hd), pinchCm: norm(sub(Hd[4], Hd[8])) }
+        const lm = hr.landmarks[i]
+        const vw = (video as HTMLVideoElement).videoWidth || video.width || 1
+        const vh = (video as HTMLVideoElement).videoHeight || video.height || 1
+        const aspect = vh / vw
+        const image = {
+          x: lm[0].x, y: lm[0].y, aspect,
+          size: Math.hypot(lm[9].x - lm[0].x, (lm[9].y - lm[0].y) * aspect),
+          lengthCm: norm(sub(Hd[9], Hd[0])),
+        }
+        out.hands[side] = { tracked: true, points: Hd, dir, normal, curls: fingerCurls(Hd), pinchCm: norm(sub(Hd[4], Hd[8])), image }
         this.handLastSeen[side] = t
       }
     }
@@ -287,18 +307,47 @@ function fingerCurls(Hd: Vec[]): Array<[number, number, number]> {
   ])
 }
 
+/** How sure the hand model must be of a hand's shape (right or left) to overrule the arms. */
+const HANDEDNESS_SURE = 0.85
+/** Two detections closer than this on average (image fraction) are the same hand found twice. */
+const SAME_HAND = 0.035
+
+function sameHand(a: Landmark[], b: Landmark[]) {
+  let sum = 0
+  for (let k = 0; k < 21; k++) sum += Math.hypot(a[k].x - b[k].x, a[k].y - b[k].y)
+  return sum / 21 < SAME_HAND
+}
+
 /** Each detected hand to the patient's left/right arm by wrist proximity in the image. */
 function assignHandSides(
   landmarks: Landmark[][],
-  handedness: Array<Array<{ categoryName: string }>>,
+  handedness: Array<Array<{ categoryName: string; score?: number }>>,
   pose: Landmark[] | undefined,
   last: Record<Side, Landmark | null>,
 ): Partial<Record<Side, number>> {
+  // The same hand found twice (hands together, fingers interlaced): keep the surer detection only.
+  if (landmarks.length === 2 && sameHand(landmarks[0], landmarks[1])) {
+    const keep = (handedness[0]?.[0]?.score ?? 0) >= (handedness[1]?.[0]?.score ?? 0) ? 0 : 1
+    landmarks = [landmarks[keep]]
+    handedness = [handedness[keep]]
+    const only = assignHandSides(landmarks, handedness, pose, last)
+    const side = Object.keys(only)[0] as Side | undefined
+    return side ? { [side]: keep } : {}
+  }
+  // What the hand model itself sees: the shape of a right or a left hand. MediaPipe labels assume a
+  // mirrored selfie image; the camera feed here is not mirrored.
+  const shapeSide = (i: number): { side: Side; sure: boolean } => {
+    const h = handedness[i]?.[0]
+    return { side: h?.categoryName === 'Left' ? 'right' : 'left', sure: (h?.score ?? 0) >= HANDEDNESS_SURE }
+  }
   const det = landmarks.map((lm, i) => {
     if (pose) {
       const dr = Math.hypot(lm[0].x - pose[R_WR].x, lm[0].y - pose[R_WR].y)
       const dl = Math.hypot(lm[0].x - pose[L_WR].x, lm[0].y - pose[L_WR].y)
-      // Close call (hands near each other, or the pose wrist lagging): stay with the side this hand had.
+      // Close call (hands near each other or crossed, or the pose wrist lagging): the hand's own
+      // shape decides when the model is sure of it; otherwise stay with the side this hand had.
+      const shape = shapeSide(i)
+      if (Math.abs(dl - dr) < SIDE_CLOSE_CALL && shape.sure) return { i, side: shape.side, margin: SIDE_CLOSE_CALL }
       if (Math.abs(dl - dr) < SIDE_CLOSE_CALL && last.right && last.left) {
         const lr = Math.hypot(lm[0].x - last.right.x, lm[0].y - last.right.y)
         const ll = Math.hypot(lm[0].x - last.left.x, lm[0].y - last.left.y)
@@ -306,9 +355,7 @@ function assignHandSides(
       }
       return dr <= dl ? { i, side: 'right' as Side, margin: dl - dr } : { i, side: 'left' as Side, margin: dr - dl }
     }
-    // MediaPipe labels assume a mirrored selfie image; the camera feed here is not mirrored.
-    const label = handedness[i]?.[0]?.categoryName
-    return { i, side: (label === 'Left' ? 'right' : 'left') as Side, margin: 0 }
+    return { i, side: shapeSide(i).side, margin: 0 }
   })
   if (det.length === 2 && det[0].side === det[1].side) {
     const weaker = det[0].margin < det[1].margin ? 0 : 1

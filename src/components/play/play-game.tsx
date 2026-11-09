@@ -131,8 +131,18 @@ export function PlayGame() {
     let step: 'camera' | 'video' | 'scene' | 'tracking' = 'camera'
     try {
       const v = video.current!
+      const params = new URLSearchParams(window.location.search)
+      // ?replay=<video> runs a recording through the whole pipeline instead of the camera (testing).
+      const replay = params.get('replay')
+      if (replay && process.env.NODE_ENV !== 'production') {
+        step = 'video'
+        v.src = replay
+        v.loop = true
+        v.muted = true
+        v.playsInline = true
+        await v.play()
       // ?sim drives a scripted patient instead of the camera (testing and presenting without a camera).
-      if (!new URLSearchParams(window.location.search).has('sim')) {
+      } else if (!params.has('sim')) {
         // In-app browsers (WhatsApp, Instagram…) and plain http have no camera API at all.
         if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no mediaDevices'), { name: 'NoCameraApi' })
         const stream = await navigator.mediaDevices
@@ -229,6 +239,8 @@ export function PlayGame() {
 
   const goalText = plan.dailyTasks > 0 ? `${hud?.done ?? 0} / ${plan.dailyTasks}` : `${hud?.done ?? 0}`
   const seen = hud?.body && (hud.hands.right || hud.hands.left)
+  // During play a hand on screen is enough: it can stay shown from the hand model alone.
+  const handShown = !!hud && (hud.hands.right || hud.hands.left)
 
   return (
     <div dir="rtl" className="fixed inset-0 overflow-hidden bg-[#1d140d] text-white select-none">
@@ -300,7 +312,7 @@ export function PlayGame() {
               <IconButton label="إنهاء الجلسة" onClick={() => finish()}><X className="h-5 w-5" /></IconButton>
             </div>
           </div>
-          {!seen && (
+          {!handShown && (
             <div className="absolute inset-x-0 top-20 z-10 flex justify-center px-4">
               <p className="rounded-xl bg-amber-500/90 px-4 py-2 text-sm font-medium text-black">ما نشوف يدك… ارجع لمكانك قدام الكاميرا</p>
             </div>

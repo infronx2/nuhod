@@ -41,6 +41,41 @@ class SideState {
   dwellTime = 0
   prevPalm: THREE.Vector3 | null = null
   palmVelocity = new THREE.Vector3()
+  /** The last moment both the arm and the hand were seen: the arm then, and the hand in the image. */
+  anchor: { arm: ArmSample; image: NonNullable<HandSample['image']>; t: number } | null = null
+}
+
+/**
+ * Hand seen, arm lost (the hand close to the camera hides the face and shoulder from the body
+ * model): the arm as last seen, moved by how far the hand has moved in the camera image since.
+ * Across the image the hand's own size gives the scale (its real length over its length in the
+ * image = centimetres per image width at its depth); toward the camera its growth gives the depth,
+ * assuming a usual 60° webcam, damped since that guess is rough. For display only: the therapy
+ * angles keep coming from the body model.
+ */
+const HAND_ONLY_HOLD_S = 4
+const WEBCAM_FOCAL = 0.5 / Math.tan(THREE.MathUtils.degToRad(30))
+const DEPTH_TRUST = 0.7
+const MAX_DEPTH_SHIFT_CM = 40
+
+function armFromImage(anchor: NonNullable<SideState['anchor']>, now: NonNullable<HandSample['image']>): ArmSample {
+  const a = anchor.image
+  const len = (a.lengthCm + now.lengthCm) / 2
+  const at = (p: NonNullable<HandSample['image']>) => {
+    const widthCm = len / Math.max(p.size, 1e-3)
+    return [(p.x - 0.5) * widthCm, (p.y - 0.5) * widthCm * p.aspect, WEBCAM_FOCAL * widthCm]
+  }
+  const [xa, ya, za] = at(a), [xn, yn, zn] = at(now)
+  // Image right is the patient's left, image down is down, nearer the camera is forward.
+  const fwd = THREE.MathUtils.clamp(-(zn - za) * DEPTH_TRUST, -MAX_DEPTH_SHIFT_CM, MAX_DEPTH_SHIFT_CM)
+  const d: [number, number, number] = [fwd, -(xn - xa), -(yn - ya)]
+  const w = anchor.arm.wrist, e = anchor.arm.elbow
+  return {
+    ...anchor.arm,
+    wrist: [w[0] + d[0], w[1] + d[1], w[2] + d[2]],
+    // The elbow follows part of the way, so the forearm turns rather than slides.
+    elbow: [e[0] + d[0] * 0.5, e[1] + d[1] * 0.5, e[2] + d[2] * 0.5],
+  }
 }
 
 export class HandInput {
@@ -60,6 +95,7 @@ export class HandInput {
       st.hand = hand
       st.lastHand = now
     }
+    if (arm?.tracked && hand.tracked && hand.image) st.anchor = { arm, image: hand.image, t: now }
   }
 
   isVisible(side: Side) { return this.hands[side].visible }
@@ -76,13 +112,17 @@ export class HandInput {
 
   private updateHand(side: Side, now: number, dt: number) {
     const st = this.s[side], h = this.hands[side]
-    const fresh = now - st.lastArm < TRACKING_GRACE_S && this.active[side] && st.arm
-    h.setVisible(!!fresh)
-    if (!fresh || !st.arm) return
     const handFresh = now - st.lastHand < TRACKING_GRACE_S
+    let arm = now - st.lastArm < TRACKING_GRACE_S && this.active[side] ? st.arm : null
+    // Arm lost but the hand still seen: keep the hand on screen, moving with the camera image.
+    if (!arm && this.active[side] && handFresh && st.anchor && st.hand?.image && now - st.anchor.t < HAND_ONLY_HOLD_S) {
+      arm = armFromImage(st.anchor, st.hand.image)
+    }
+    h.setVisible(!!arm)
+    if (!arm) return
     // Keep a closed hand closed through finger dropouts so a held object is not shown slipping out.
     const keepLast = !handFresh && st.held && st.hand
-    h.update(st.arm, handFresh || keepLast ? st.hand : null, dt)
+    h.update(arm, handFresh || keepLast ? st.hand : null, dt)
   }
 
   private updateGripState(st: SideState, now: number, dt: number) {
