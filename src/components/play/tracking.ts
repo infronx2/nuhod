@@ -43,7 +43,20 @@ export interface HandSample {
    * size there (wrist to middle knuckle, as a fraction of the image width), with its real length (cm).
    * Lets the hand keep moving when the body model loses the arm (hand close to the camera).
    */
-  image?: { x: number; y: number; size: number; aspect: number; lengthCm: number }
+  image?: {
+    x: number; y: number; size: number; aspect: number; lengthCm: number
+    /**
+     * The palm's scale in the image: image widths per real centimetre, from the palm's three sides
+     * (wrist–index knuckle, wrist–little knuckle, across the knuckles), which do not change as the
+     * fingers bend. The largest of the three is used, since a tilted palm only shortens a side.
+     */
+    unitsPerCm: number
+  }
+  /**
+   * The two hands overlap in the image (clasped, interlaced, one in front of the other): the finger
+   * points are guesses then, so the game keeps the last good finger shape instead of showing them.
+   */
+  occluded?: boolean
 }
 
 export interface TrackFrame {
@@ -55,12 +68,14 @@ export interface TrackFrame {
    * comparable both ways) and how sure the body model is of them: for the compensation check.
    */
   trunk?: { left: [number, number]; right: [number, number]; visibility: number }
+  /** Each elbow in the camera image (x 0..1 of width, y 0..1 of height) and its visibility. */
+  elbows?: Partial<Record<Side, { x: number; y: number; visibility: number }>>
   /** What the models saw, in image coordinates (0..1), for the inspection overlay (?inspect). */
   image?: { pose?: Landmark[]; hands: Partial<Record<Side, Landmark[]>> }
 }
 
 // ── Filtering (One Euro, as in the pose server) ─────────────────────────────
-class OneEuro {
+export class OneEuro {
   private x: number | null = null
   private dx = 0
   private t = 0
@@ -274,6 +289,10 @@ export class Tracker {
         left: [ls.x, ls.y * aspect], right: [rs.x, rs.y * aspect],
         visibility: Math.min(ls.visibility ?? 1, rs.visibility ?? 1),
       }
+      out.elbows = {
+        right: { x: poseImage[R_EL].x, y: poseImage[R_EL].y, visibility: poseImage[R_EL].visibility ?? 1 },
+        left: { x: poseImage[L_EL].x, y: poseImage[L_EL].y, visibility: poseImage[L_EL].visibility ?? 1 },
+      }
     }
     if (poseWorld && poseImage) {
       const vis = poseWorld.map((p) => p.visibility ?? 1)
@@ -288,13 +307,22 @@ export class Tracker {
       const world = this.handFilters[side].apply(raw.map((p) => [p.x, p.y, p.z] as Vec), t)
       const Hd = world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 }))
       const { dir, normal } = handFrame(Hd, side)
+      const imgLen = (a: number, b: number) => Math.hypot(lm[b].x - lm[a].x, (lm[b].y - lm[a].y) * aspect)
+      const palm: Array<[number, number]> = [[0, 5], [0, 17], [5, 17]]
+      const unitsPerCm = Math.max(...palm.map(([a, b]) => imgLen(a, b) / Math.max(norm(sub(Hd[b], Hd[a])), 0.5)))
       const image = {
         x: lm[0].x, y: lm[0].y, aspect,
-        size: Math.hypot(lm[9].x - lm[0].x, (lm[9].y - lm[0].y) * aspect),
+        size: imgLen(0, 9),
         lengthCm: norm(sub(Hd[9], Hd[0])),
+        unitsPerCm,
       }
       out.hands[side] = { tracked: true, points: Hd, dir, normal, curls: fingerCurls(Hd), pinchCm: norm(sub(Hd[4], Hd[8])), image }
       this.handLastSeen[side] = t
+    }
+    // Hands overlapping in the image: their finger points are guesses.
+    if (found.length === 2 && boxOverlap(found[0].lm, found[1].lm, aspect) > HANDS_OVERLAP) {
+      out.hands.right.occluded = true
+      out.hands.left.occluded = true
     }
     for (const side of ['right', 'left'] as Side[]) {
       if (!out.hands[side].tracked && t - this.handLastSeen[side] > HAND_LOST_RESET_S) {
@@ -388,6 +416,21 @@ function fingerCurls(Hd: Vec[]): Array<[number, number, number]> {
     Math.max(0, 180 - angleDeg(sub(Hd[a], Hd[b]), sub(Hd[c], Hd[b]))),
     Math.max(0, 180 - angleDeg(sub(Hd[b], Hd[c]), sub(Hd[tip], Hd[c]))),
   ])
+}
+
+/** Share of the smaller hand's box covered by the other hand's box above which the hands overlap. */
+const HANDS_OVERLAP = 0.3
+
+function boxOverlap(a: Landmark[], b: Landmark[], aspect: number) {
+  const box = (h: Landmark[]) => {
+    const xs = h.map((p) => p.x), ys = h.map((p) => p.y * aspect)
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+  }
+  const [ax0, ay0, ax1, ay1] = box(a), [bx0, by0, bx1, by1] = box(b)
+  const w = Math.max(0, Math.min(ax1, bx1) - Math.max(ax0, bx0))
+  const h = Math.max(0, Math.min(ay1, by1) - Math.max(ay0, by0))
+  const smaller = Math.min((ax1 - ax0) * (ay1 - ay0), (bx1 - bx0) * (by1 - by0))
+  return smaller > 0 ? (w * h) / smaller : 0
 }
 
 /** How sure the hand model must be of a hand's shape (right or left) to overrule the arms. */

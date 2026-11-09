@@ -20,6 +20,7 @@ import { Voice } from './voice'
 import { SimPatient } from './sim'
 import { EYES, ue } from './space'
 import { Calibration } from './calibration'
+import { CameraAlign } from './aligned'
 import { PostureWatch, type Compensation } from './posture'
 
 /** ?debug in the address exposes tracking values on window.__nuhoud. */
@@ -34,6 +35,8 @@ const HANDCAM = typeof window !== 'undefined' && new URLSearchParams(window.loca
 const INSPECT = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('inspect')
 /** ?mirror: flip each picture before tracking (a recording saved mirrored, as many selfie videos are). */
 const MIRROR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mirror')
+/** ?embodied places the hands from the body model's 3D arm (the old mode) instead of the camera picture. */
+const EMBODIED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('embodied')
 /** ?nocalib skips the per-hand calibration at the start (testing). */
 const NOCALIB = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nocalib')
 /** Shortest gap between two spoken posture reminders (s). */
@@ -103,6 +106,7 @@ export class Game {
   /** The per-hand calibration while it runs (before the first task). */
   private calibration: Calibration | null = null
   readonly posture = new PostureWatch()
+  private align!: CameraAlign
   private lastReminder = -1e9
   /** A posture reminder shown for a few seconds over the task instruction. */
   private reminder = ''
@@ -134,6 +138,7 @@ export class Game {
     this.camera.position.copy(EYES)
     this.camera.lookAt(EYES.clone().add(ue(115, 0, -50)))
     this.scene.add(this.camera)
+    this.align = new CameraAlign(this.camera)
 
     for (const h of Object.values(this.hands)) this.scene.add(h.root, h.forearm)
     this.input = new HandInput(this.hands, () => this.director.grabbables(), {
@@ -294,7 +299,10 @@ export class Game {
           if (HANDTEST_OPEN) arm = { ...arm, wrist: [40, side === 'right' ? 12 : -12, -32], elbow: [14, side === 'right' ? 18 : -18, -40] }
         }
         if (arm?.tracked) this.arms[side] = arm
-        this.input.feed(side, arm, HANDTEST_OPEN ? { ...f.hands[side], tracked: false } : f.hands[side], now)
+        // Shown hand: placed from the camera picture (AR), not the body model's 3D arm. No fallback
+        // to the 3D arm, so a lost hand hides instead of jumping elsewhere.
+        if (!this.sim && !EMBODIED && !HANDTEST) arm = this.align.arm(side, f, f.arms[side], now) ?? undefined
+        this.input.feed(side, arm,HANDTEST_OPEN ? { ...f.hands[side], tracked: false } : f.hands[side], now)
       }
       // Posture: the resting shape while calibrating, the compensation check during a task.
       if (this.calibration) this.posture.observeRest(f)

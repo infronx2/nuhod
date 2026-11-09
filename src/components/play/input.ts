@@ -94,7 +94,8 @@ export class HandInput {
       st.lastArm = now
     }
     if (hand.tracked) {
-      st.hand = hand
+      // Hands overlapping: the finger points are guesses, so keep the last good shape (and grip).
+      if (!hand.occluded || !st.hand) st.hand = hand
       st.lastHand = now
     }
     if (arm?.tracked && hand.tracked && hand.image) st.anchor = { arm, image: hand.image, t: now }
