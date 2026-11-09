@@ -7,6 +7,72 @@
 import * as THREE from 'three'
 import { EYES, ROOM, TABLE, lin, tablePoint } from './space'
 import { lathe, mat } from './majlis'
+import { fitHeight, whenModel } from './assets'
+
+/** Fine lengthwise wrinkles for a date's skin, drawn once and shared by every date. */
+let wrinkles: THREE.CanvasTexture | null = null
+function dateWrinkles(): THREE.CanvasTexture {
+  if (wrinkles) return wrinkles
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 128
+  const g = c.getContext('2d')!
+  g.fillStyle = '#808080'
+  g.fillRect(0, 0, 256, 128)
+  for (let i = 0; i < 90; i++) {
+    const y = (i * 37) % 128, x = (i * 53) % 256, len = 40 + ((i * 29) % 90)
+    g.strokeStyle = i % 3 ? 'rgba(20,20,20,0.55)' : 'rgba(235,235,235,0.35)'
+    g.lineWidth = 1 + (i % 3)
+    g.beginPath()
+    g.moveTo(x, y)
+    g.bezierCurveTo(x + len * 0.3, y + 4, x + len * 0.6, y - 4, x + len, y + 2)
+    g.stroke()
+  }
+  wrinkles = new THREE.CanvasTexture(c)
+  wrinkles.wrapS = wrinkles.wrapT = THREE.RepeatWrapping
+  return wrinkles
+}
+
+let dateGeo: THREE.BufferGeometry | null = null
+/**
+ * A dried date: an egg-shaped body, slightly fuller at the stalk end, its skin pulled into soft
+ * lengthwise folds and fine cross wrinkles (in the shape itself, so they catch the light).
+ */
+function dateGeometry(): THREE.BufferGeometry {
+  if (dateGeo) return dateGeo
+  const g = new THREE.SphereGeometry(1, 64, 40)
+  const p = g.attributes.position as THREE.BufferAttribute
+  const v = new THREE.Vector3()
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i)
+    const along = v.x // -1 (tip) .. 1 (stalk end): the long axis after scaling
+    const a = Math.atan2(v.z, v.y)
+    const folds = 0.045 * Math.sin(a * 6 + along * 1.7) + 0.025 * Math.sin(a * 11 - along * 3.1)
+    const cross = 0.012 * Math.sin(along * 38 + a * 2) * (1 - Math.abs(along))
+    const egg = 1 + 0.08 * along
+    const r = egg * (1 + (folds + cross) * (1 - along * along * 0.6))
+    v.y *= r
+    v.z *= r
+    p.setXYZ(i, v.x, v.y, v.z)
+  }
+  g.computeVertexNormals()
+  dateGeo = g
+  return g
+}
+
+/** Makes a loaded model's opaque materials glow for the "you can pick this up" highlight. */
+function glowModel(g: THREE.Object3D, register: (m: THREE.MeshStandardMaterial) => void, colour = 0xffd28a) {
+  g.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!m.isMesh) return
+    for (const mt of (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[]) {
+      if (!mt.isMeshStandardMaterial || mt.transparent) continue
+      mt.emissive = new THREE.Color(colour)
+      mt.emissiveIntensity = 0
+      register(mt)
+    }
+  })
+}
 
 export type Grip = 'pinch' | 'grasp'
 export type GrabState = 'home' | 'held' | 'free' | 'placed' | 'returning' | 'gone'
@@ -138,43 +204,92 @@ export class Grabbable {
 export class DateFruit extends Grabbable {
   constructor() {
     super('date', ['pinch', 'grasp'], 1.6, 0.8)
-    const m = this.glowable(mat(lin(0.16, 0.05, 0.015), 0, 0.35, new THREE.Color(0xffc070)))
-    m.emissiveIntensity = 0
-    const fruit = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), m)
-    fruit.scale.set(1.35, 0.8, 0.8)
+    // A ripe khalas date: dark amber, glossy, finely wrinkled along its length.
+    const skin = new THREE.MeshPhysicalMaterial({
+      color: lin(0.22, 0.075, 0.022),
+      roughness: 0.42,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.35,
+      bumpMap: dateWrinkles(),
+      bumpScale: 0.6,
+      emissive: new THREE.Color(0xffc070),
+      emissiveIntensity: 0,
+    })
+    this.glowable(skin)
+    const fruit = new THREE.Mesh(dateGeometry(), skin)
+    fruit.scale.set(1.4, 0.82, 0.78)
+    fruit.rotation.y = Math.random() * Math.PI * 2
+    fruit.rotation.x = (Math.random() - 0.5) * 0.4
     fruit.castShadow = true
     this.object.add(fruit)
+    // The pale cap where the date hung from its stalk.
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.28, 12), mat(lin(0.45, 0.3, 0.14), 0, 0.8))
+    cap.position.x = 1.39
+    cap.rotation.y = Math.PI / 2
+    this.object.add(cap)
   }
 }
 
 export class Finjan extends Grabbable {
   constructor() {
     super('finjan', ['pinch', 'grasp'], 3, 0)
-    const porcelain = mat(lin(0.85, 0.82, 0.75), 0, 0.25)
-    const cup = lathe([[0, 0], [1.8, 0], [2.3, 0.4], [2.6, 2.2], [2.9, 3.6], [2.75, 3.6], [2.45, 2.2], [1.9, 0.6], [0, 0.6]], porcelain, 28)
+    // An Omani finjan: glazed white porcelain, a gold rim and foot band, half filled with gahwa.
+    const porcelain = new THREE.MeshPhysicalMaterial({
+      color: lin(0.9, 0.88, 0.83), roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06,
+      emissive: new THREE.Color(0xffd28a), emissiveIntensity: 0,
+    })
+    this.glowable(porcelain)
+    const gold = new THREE.MeshPhysicalMaterial({ color: lin(0.83, 0.6, 0.25), metalness: 1, roughness: 0.22 })
+    const cup = lathe([[0, 0], [1.7, 0], [1.85, 0.15], [1.9, 0.45], [2.25, 0.6], [2.55, 1.6], [2.8, 2.9], [3.0, 3.75], [2.86, 3.8],
+      [2.66, 2.95], [2.42, 1.75], [2.1, 0.85], [0, 0.8]], porcelain, 48)
     this.object.add(cup)
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(2.83, 0.08, 6, 28), mat(lin(0.62, 0.46, 0.24), 1, 0.35))
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(2.93, 0.07, 8, 48), gold)
     rim.rotation.x = Math.PI / 2
-    rim.position.y = 3.6
+    rim.position.y = 3.78
     this.object.add(rim)
+    const foot = new THREE.Mesh(new THREE.TorusGeometry(1.88, 0.06, 8, 40), gold)
+    foot.rotation.x = Math.PI / 2
+    foot.position.y = 0.3
+    this.object.add(foot)
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(2.86, 2.84, 0.18, 48, 1, true), new THREE.MeshPhysicalMaterial({ color: lin(0.08, 0.32, 0.22), roughness: 0.2, clearcoat: 1 }))
+    band.position.y = 3.25
+    this.object.add(band)
+    const gahwa = new THREE.Mesh(new THREE.CircleGeometry(2.55, 40), new THREE.MeshPhysicalMaterial({ color: lin(0.42, 0.27, 0.1), roughness: 0.08, clearcoat: 1 }))
+    gahwa.rotation.x = -Math.PI / 2
+    gahwa.position.y = 2.2
+    this.object.add(gahwa)
   }
 }
 
 export class Dallah extends Grabbable {
   constructor() {
     super('dallah', ['grasp'], 7, 0)
-    const brass = mat(lin(0.62, 0.46, 0.24), 1, 0.35)
-    this.object.add(lathe([[0, 0], [6.5, 0], [7, 0.8], [7.2, 4], [6.2, 8], [3.2, 11], [2.8, 13], [3.8, 15.5], [4.6, 16], [3.6, 17.5],
-      [2.2, 19.5], [1.2, 21], [0.8, 23], [1.3, 24], [0, 25]], brass, 32))
-    const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.4, 14, 12), brass)
+    const brass = this.glowable(new THREE.MeshPhysicalMaterial({
+      color: lin(0.72, 0.52, 0.24), metalness: 1, roughness: 0.3, clearcoat: 0.3,
+      emissive: new THREE.Color(0xffd28a), emissiveIntensity: 0,
+    }))
+    const body = new THREE.Group()
+    body.add(lathe([[0, 0], [6.5, 0], [7, 0.8], [7.2, 4], [6.2, 8], [3.2, 11], [2.8, 13], [3.8, 15.5], [4.6, 16], [3.6, 17.5],
+      [2.2, 19.5], [1.2, 21], [0.8, 23], [1.3, 24], [0, 25]], brass, 48))
+    const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 1.4, 14, 16), brass)
     spout.position.set(0, 11, -6.5)
     spout.rotation.x = -0.75
-    this.object.add(spout)
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.5, 8, 20, Math.PI), brass)
+    body.add(spout)
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.5, 10, 24, Math.PI), brass)
     handle.position.set(0, 10, 5.5)
     handle.rotation.y = Math.PI / 2
     handle.rotation.z = -Math.PI / 2
-    this.object.add(handle)
+    body.add(handle)
+    this.object.add(body)
+    // The scanned brass dallah (Sketchfab, CC BY) replaces the turned one when it is present;
+    // its spout faces -z like the built-in one, so a pour still tips the right way.
+    whenModel('dallah', (g) => {
+      glowModel(g, (m) => this.glowable(m))
+      const holder = new THREE.Group()
+      holder.add(fitHeight(g, 25))
+      body.clear()
+      body.add(holder)
+    })
   }
 }
 
@@ -226,12 +341,41 @@ export class Lantern extends Grabbable {
     visual.add(this.light)
     this.object.add(visual)
     this.applyGlow(0, 0)
+
+    // The Poly Haven hurricane lantern (CC0) replaces the turned one, at the same size: its base on the
+    // table 9.8 cm below the centre and its handle at the hanging anchor. The flame and its light stay.
+    whenModel('Lantern_01', (g) => {
+      g.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (!m.isMesh) return
+        const mt = m.material as THREE.MeshPhysicalMaterial
+        // Transmission costs a second render pass on phones; plain transparency reads the same at this size.
+        if (mt.transmission > 0 || mt.transparent || /glass/i.test(mt.name) || /glass/i.test(m.name)) {
+          const glass = new THREE.MeshStandardMaterial({ color: lin(0.95, 0.85, 0.7), roughness: 0.05, metalness: 0,
+            transparent: true, opacity: 0.32, emissive: new THREE.Color(1, 0.55, 0.18), emissiveIntensity: 0, depthWrite: false })
+          m.material = glass
+          this.modelGlass.push(glass)
+          m.castShadow = false
+        }
+      })
+      glowModel(g, (m) => this.glowable(m))
+      const holder = new THREE.Group()
+      holder.add(fitHeight(g, 19.4))
+      holder.position.y = -8
+      for (const c of [...visual.children]) if (c !== flame && c !== this.light) visual.remove(c)
+      visual.add(holder)
+      this.applyGlow(this.glow, 0)
+    })
   }
+
+  private modelGlass: THREE.MeshStandardMaterial[] = []
 
   private applyGlow(lit: number, proximity: number) {
     this.glass.emissiveIntensity = 0.04 + lit * 2.2 + proximity * 0.5
+    for (const g of this.modelGlass) g.emissiveIntensity = 0.02 + lit * 0.45 + proximity * 0.3
     this.flame.emissiveIntensity = 0.3 + lit * 6
-    this.light.intensity = lit * 2600
+    // Softer while in the hand: a point light a few centimetres from the skin would wash the fingers out.
+    this.light.intensity = lit * (this.state === 'held' ? 320 : 1600)
   }
 
   /** Hung on a ceiling slot as decoration (drifts there unless instant), lit, with a chain up to the ceiling. */

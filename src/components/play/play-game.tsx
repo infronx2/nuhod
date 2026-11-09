@@ -130,19 +130,22 @@ export function PlayGame() {
     // Which step failed, so the message (and what the patient reports back) says where it stopped.
     let step: 'camera' | 'video' | 'scene' | 'tracking' = 'camera'
     try {
-      // In-app browsers (WhatsApp, Instagram…) and plain http have no camera API at all.
-      if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no mediaDevices'), { name: 'NoCameraApi' })
-      const stream = await navigator.mediaDevices
-        .getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
-        .catch((e: unknown) => {
-          if (e instanceof Error && e.name === 'NotAllowedError') throw e
-          // Some cameras refuse the size hints; any front camera will do.
-          return navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        })
-      step = 'video'
       const v = video.current!
-      v.srcObject = stream
-      await v.play()
+      // ?sim drives a scripted patient instead of the camera (testing and presenting without a camera).
+      if (!new URLSearchParams(window.location.search).has('sim')) {
+        // In-app browsers (WhatsApp, Instagram…) and plain http have no camera API at all.
+        if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no mediaDevices'), { name: 'NoCameraApi' })
+        const stream = await navigator.mediaDevices
+          .getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+          .catch((e: unknown) => {
+            if (e instanceof Error && e.name === 'NotAllowedError') throw e
+            // Some cameras refuse the size hints; any front camera will do.
+            return navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          })
+        step = 'video'
+        v.srcObject = stream
+        await v.play()
+      }
       step = 'scene'
       const { Game } = await import('./game')
       const g = new Game(stage.current!, v, plan, (s) => {

@@ -6,7 +6,9 @@
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { EYES, ue } from './space'
+import { texture } from './assets'
 import type { ArmSample, HandSample, Side, Vec } from './tracking'
 
 const JOINTS = [
@@ -40,15 +42,149 @@ const OPEN_RIGHT: Vec[] = [
   [8.2, 3.8, 0], [11, 4.2, -0.3], [12.8, 4.5, -0.6], [14.3, 4.7, -0.9],
 ]
 
-const SKIN = new THREE.Color().setRGB(0.62, 0.42, 0.32, THREE.SRGBColorSpace)
+/**
+ * A right hand's 21 landmarks (game cm from the wrist: forward, right, up; palm down) built from
+ * finger bend angles in degrees ([knuckle, middle, end] per finger, thumb first): used when the
+ * camera gives only how closed the hand is (the scripted patient), so the hand still makes a real
+ * fist or pinch instead of staying flat.
+ */
+const KNUCKLES: Vec[] = [[2, -2.5, -0.5], [9, -2.2, 0], [9.3, 0, 0], [9, 2, 0], [8.2, 3.8, 0]]
+const SEGMENTS: Vec[] = [[3.0, 2.6, 2.0], [3.6, 2.3, 1.9], [3.9, 2.6, 2.0], [3.6, 2.4, 1.9], [2.9, 1.9, 1.6]]
+const SPLAY = [0, -6, 0, 5, 11]
+function handFromCurls(curls: Array<[number, number, number]>): Vec[] {
+  const out: Vec[] = [[0, 0, 0]]
+  const rad = THREE.MathUtils.degToRad
+  for (let f = 0; f < 5; f++) {
+    const c = curls[f] ?? [10, 10, 5]
+    let p = new THREE.Vector3(...KNUCKLES[f])
+    out.push(p.toArray() as Vec)
+    if (f === 0) {
+      // Thumb: out from the base of the palm, folding across the palm as it closes.
+      const base = new THREE.Vector3(0.65, -0.65, -0.35).normalize()
+      const across = new THREE.Vector3(0.25, 0.8, -0.55).normalize()
+      let a = 0
+      for (let k = 0; k < 3; k++) {
+        a += rad(c[k]) * 0.9
+        const d = base.clone().multiplyScalar(Math.cos(a)).addScaledVector(across, Math.sin(a)).normalize()
+        p = p.clone().addScaledVector(d, SEGMENTS[0][k])
+        out.push(p.toArray() as Vec)
+      }
+      continue
+    }
+    const s = rad(SPLAY[f])
+    const fwd = new THREE.Vector3(Math.cos(s), Math.sin(s), 0)
+    const down = new THREE.Vector3(0, 0, -1)
+    let a = 0
+    for (let k = 0; k < 3; k++) {
+      a += rad(c[k])
+      const d = fwd.clone().multiplyScalar(Math.cos(a)).addScaledVector(down, Math.sin(a))
+      p = p.clone().addScaledVector(d, SEGMENTS[f][k])
+      out.push(p.toArray() as Vec)
+    }
+  }
+  return out
+}
+
+const SKIN = new THREE.Color().setRGB(0.58, 0.38, 0.28, THREE.SRGBColorSpace)
+const DISHDASHA = new THREE.Color().setRGB(0.93, 0.91, 0.86, THREE.SRGBColorSpace)
 /** How fast the shown hand catches up with the tracked one (per second), and the jump that is shown at once. */
 const FOLLOW_RATE = 18
 const FOLLOW_SNAP_CM = 45
+/** Forearm (cm): the dishdasha sleeve ends this far before the wrist, leaving a bare wrist; its radius at the cuff and at the elbow. */
+const CUFF_BEFORE_WRIST = 6
+const SLEEVE_RADIUS_CUFF = 4.1
+const SLEEVE_RADIUS_ELBOW = 5.4
+const WRIST_RADIUS = 2.55
+const FOREARM_RADIUS = 3.1
+
+/**
+ * The realistic hand (Sketchfab "Rigged hand", a right hand with skin, veins, knuckles and nails):
+ * each deforming bone and the MediaPipe landmarks its direction follows ([from, to]). The left hand
+ * is the same model mirrored. The rest pose gives each bone's direction and the back of the hand;
+ * every frame each bone turns by the rotation that takes that rest frame to the tracked one.
+ */
+const REAL_MAP: Array<[RegExp, number, number]> = [
+  [/^pulse.?R/, 0, 9], [/^hand.?R_/, 0, 9],
+  [/^thumb_base.?R/, 0, 1], [/^thumb_01.?R/, 1, 2], [/^thumb_02.?R/, 2, 3], [/^thumb_03.?R_\d/, 3, 4],
+  [/^index_base.?R/, 0, 5], [/^index_01.?R/, 5, 6], [/^index_02.?R/, 6, 7], [/^index_03.?R_\d/, 7, 8],
+  [/^middle_base.?R/, 0, 9], [/^middle_01.?R/, 9, 10], [/^middle_02.?R/, 10, 11], [/^middle_03.?R_\d/, 11, 12],
+  [/^ring_base.?R/, 0, 13], [/^ring_01.?R/, 13, 14], [/^ring_02.?R/, 14, 15], [/^ring_03.?R_\d/, 15, 16],
+  [/^pinky_base.?R/, 0, 17], [/^pinky_01.?R/, 17, 18], [/^pinky_02.?R/, 18, 19], [/^pinky_03.?R_\d/, 19, 20],
+]
+/** Bones whose rest positions stand for landmarks 0 (wrist), 5, 9 and 17 (index, middle, pinky knuckles). */
+const REAL_ANCHORS = { wrist: /^hand.?R_/, index: /^index_01.?R/, middle: /^middle_01.?R/, pinky: /^pinky_01.?R/ }
+
+interface RealRig {
+  root: THREE.Group
+  bones: THREE.Bone[]
+  restQ: THREE.Quaternion[]
+  restBasis: THREE.Quaternion[]
+  restHandLen: number
+  material: THREE.MeshPhysicalMaterial
+}
+
+/** Rotation whose z axis is `dir` and whose y axis is `dorsal` made perpendicular to it. */
+function frame(dir: THREE.Vector3, dorsal: THREE.Vector3, out: THREE.Quaternion) {
+  const z = dir.clone().normalize()
+  const y = dorsal.clone().addScaledVector(z, -dorsal.dot(z)).normalize()
+  const x = new THREE.Vector3().crossVectors(y, z)
+  return out.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z))
+}
+
+/**
+ * A dishdasha sleeve along +y (0 = cuff, 1 = elbow end): a slightly oval tube of soft cotton that
+ * gathers into uneven diagonal folds near the cuff and the bend of the elbow, with a wavy hem that
+ * turns inward (no hard rim), so it reads as cloth, not a cup.
+ */
+function sleeveGeometry(r0: number, r1: number): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(1, 1, 1, 64, 40, true)
+  g.translate(0, 0.5, 0)
+  const p = g.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i)
+    const a = Math.atan2(p.getZ(i), p.getX(i))
+    let r = r0 + (r1 - r0) * Math.sqrt(y)
+    // Gathered folds: strong at the cuff and the elbow, calm in the middle; diagonal like real cotton.
+    const gather = Math.exp(-y * 7) + 0.6 * Math.exp(-(1 - y) * 6)
+    r *= 1 + gather * (0.09 * Math.sin(a * 5 + y * 22) + 0.05 * Math.sin(a * 9 - y * 31 + 1.3))
+    r *= 1 + 0.025 * Math.sin(a * 3 + y * 9) + 0.015 * Math.sin(a * 2 - y * 14)
+    // Slightly flattened across the forearm.
+    const ox = 1.08, oz = 0.92
+    // The hem rolls inward over the last few millimetres.
+    const hem = y < 0.03 ? 1 - (0.03 - y) * 3 : 1
+    p.setXYZ(i, Math.cos(a) * r * ox * hem, y + (y < 0.02 ? 0.004 * Math.sin(a * 6) : 0), Math.sin(a) * r * oz * hem)
+  }
+  g.computeVertexNormals()
+  return g
+}
+
+/** A tube along +y from 0 to 1 whose radius goes from r0 to r1, with soft cloth folds when `folds`. */
+function tube(r0: number, r1: number, folds: boolean): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(1, 1, 1, 32, 8, true)
+  g.translate(0, 0.5, 0)
+  const p = g.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
+    const a = Math.atan2(z, x)
+    let r = r0 + (r1 - r0) * y
+    if (folds) r *= 1 + 0.045 * Math.sin(a * 7 + y * 5) * (0.4 + y) + 0.02 * Math.sin(a * 13 - y * 9)
+    p.setXYZ(i, Math.cos(a) * r, y, Math.sin(a) * r)
+  }
+  g.computeVertexNormals()
+  return g
+}
 
 export class RiggedHand {
   readonly root = new THREE.Group()
+  /** The forearm in a white dishdasha sleeve, in room space (cm); the game adds it to the scene. */
+  readonly forearm = new THREE.Group()
+  private sleeve: THREE.Mesh
+  private cuff: THREE.Mesh
+  private bareWrist: THREE.Mesh
+  private elbow = new THREE.Vector3()
+  private elbowTarget = new THREE.Vector3()
   private bones: THREE.Bone[] = []
-  private material!: THREE.MeshStandardMaterial
+  private material: THREE.MeshPhysicalMaterial
   /** Joint positions this frame (three.js cm, world space), in MediaPipe landmark order. */
   readonly landmarks: THREE.Vector3[] = Array.from({ length: 21 }, () => new THREE.Vector3())
   /** Where the tracker says the landmarks are; the shown hand eases toward them every rendered frame. */
@@ -59,6 +195,154 @@ export class RiggedHand {
 
   constructor(readonly side: Side) {
     this.root.scale.setScalar(100) // the asset is in metres, the scene in centimetres
+    // Skin: a soft sheen for the fine hair and oil of real skin, a faint clear coat on the knuckles.
+    this.material = new THREE.MeshPhysicalMaterial({
+      color: SKIN, roughness: 0.52, metalness: 0,
+      sheen: 0.18, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.85, 0.5, 0.4),
+      clearcoat: 0.08, clearcoatRoughness: 0.55,
+      emissive: new THREE.Color(0x3bb3bd), emissiveIntensity: 0,
+    })
+    const cloth = new THREE.MeshPhysicalMaterial({
+      color: DISHDASHA, roughness: 0.88,
+      sheen: 0.6, sheenRoughness: 0.5, sheenColor: new THREE.Color(1, 1, 1),
+      normalMap: texture('fabric_pattern_07', 'nor_gl', [6, 10]), normalScale: new THREE.Vector2(0.55, 0.55),
+      side: THREE.FrontSide,
+    })
+    // The inside of the sleeve, in its own shadow.
+    const lining = new THREE.MeshStandardMaterial({ color: DISHDASHA.clone().multiplyScalar(0.55), roughness: 0.95, side: THREE.BackSide })
+    const geo = sleeveGeometry(SLEEVE_RADIUS_CUFF, SLEEVE_RADIUS_ELBOW)
+    this.sleeve = new THREE.Mesh(geo, cloth)
+    this.sleeve.add(new THREE.Mesh(geo, lining))
+    // No separate rim: the hem is part of the sleeve. (Kept as an invisible holder for the code below.)
+    this.cuff = new THREE.Mesh(new THREE.BufferGeometry(), cloth)
+    this.cuff.visible = false
+    this.bareWrist = new THREE.Mesh(tube(FOREARM_RADIUS, WRIST_RADIUS, false), this.material)
+    for (const m of [this.sleeve, this.cuff, this.bareWrist]) {
+      m.castShadow = true
+      m.receiveShadow = true
+      m.frustumCulled = false
+    }
+    const cuffHolder = new THREE.Group()
+    cuffHolder.add(this.cuff)
+    this.sleeve.add(cuffHolder)
+    this.forearm.add(this.sleeve, this.bareWrist)
+    this.forearm.visible = false
+  }
+
+  private real: RealRig | null = null
+  private realScale = 0
+
+  /**
+   * Loads the realistic hand (one right-hand model, mirrored for the left). Rejects if the file or
+   * its bones are missing, so the caller can fall back to the WebXR hand.
+   */
+  async loadRealistic(url: string) {
+    const loader = new GLTFLoader()
+    loader.setMeshoptDecoder(MeshoptDecoder)
+    const gltf = await loader.loadAsync(url)
+    const model = gltf.scene
+    const all: THREE.Bone[] = []
+    model.traverse((o) => { if ((o as THREE.Bone).isBone) all.push(o as THREE.Bone) })
+    const find = (re: RegExp) => all.find((b) => re.test(b.name))
+    const bones = REAL_MAP.map(([re]) => find(re))
+    const anchor = Object.fromEntries(Object.entries(REAL_ANCHORS).map(([k, re]) => [k, find(re)])) as Record<keyof typeof REAL_ANCHORS, THREE.Bone | undefined>
+    if (bones.some((b) => !b) || Object.values(anchor).some((b) => !b)) throw new Error('realistic hand: bones missing')
+
+    // Rest pose, measured relative to a root whose origin is the wrist.
+    const root = new THREE.Group()
+    const offset = new THREE.Group()
+    root.add(offset)
+    offset.add(model)
+    root.updateMatrixWorld(true)
+    const wp = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3())
+    offset.position.copy(wp(anchor.wrist!).negate())
+    root.updateMatrixWorld(true)
+    const restPos = (lm: number): THREE.Vector3 => {
+      // Where each landmark sits in the rest pose: the bone the chain reaches at that landmark.
+      const to = REAL_MAP.findIndex(([, , t]) => t === lm)
+      const next = REAL_MAP.findIndex(([, f]) => f === lm)
+      if (lm === 0) return wp(anchor.wrist!)
+      if (next >= 0) return wp(bones[next]!)
+      // A fingertip: the end bone under the last joint.
+      const end = bones[to]!.children.find((c) => (c as THREE.Bone).isBone)
+      return end ? wp(end) : wp(bones[to]!)
+    }
+    const P = Array.from({ length: 21 }, (_, i) => restPos(i))
+    const restDorsal = new THREE.Vector3().crossVectors(
+      new THREE.Vector3().subVectors(P[9], P[0]), new THREE.Vector3().subVectors(P[5], P[17])).normalize()
+    const restQ = bones.map((b) => b!.getWorldQuaternion(new THREE.Quaternion()))
+    // The first bone (pulse, the end of the forearm) follows the forearm, elbow to wrist; the rest follow the hand.
+    const restBasis = REAL_MAP.map(([, f, t], i) => frame(
+      i === 0 ? new THREE.Vector3().subVectors(wp(bones[1]!), wp(bones[0]!)) : new THREE.Vector3().subVectors(P[t], P[f]),
+      restDorsal, new THREE.Quaternion()))
+
+    let material!: THREE.MeshPhysicalMaterial
+    model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh
+      if (!m.isSkinnedMesh) return
+      m.frustumCulled = false
+      m.castShadow = true
+      m.receiveShadow = true
+      const src = m.material as THREE.MeshStandardMaterial
+      // Keep the scanned colour, but natural, unpainted nails and a soft skin sheen.
+      material = new THREE.MeshPhysicalMaterial({
+        map: src.map, roughnessMap: src.roughnessMap, metalnessMap: null, normalMap: src.normalMap,
+        roughness: 0.62, metalness: 0, sheen: 0.2, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.85, 0.5, 0.4),
+        color: new THREE.Color(0.93, 0.86, 0.82), emissive: new THREE.Color(0x3bb3bd), emissiveIntensity: 0,
+      })
+      m.material = material
+    })
+    // Remove the WebXR hand if it was loaded first; this rig replaces it.
+    for (const c of [...this.root.children]) this.root.remove(c)
+    this.root.scale.setScalar(1)
+    this.root.add(root)
+    this.real = { root, bones: bones as THREE.Bone[], restQ, restBasis, restHandLen: P[9].distanceTo(P[0]), material }
+    // The scanned hand has its own wrist; the sleeve's cuff meets it directly.
+    this.bareWrist.visible = false
+    this.root.visible = false
+  }
+
+  /** Turns every bone of the realistic hand to the tracked landmarks (world cm). */
+  private poseReal(rig: RealRig) {
+    const L = this.landmarks
+    const mirror = this.side === 'left' ? -1 : 1
+    // Size the hand to the patient's: wrist to middle knuckle, eased so it never pulses.
+    const target = L[9].distanceTo(L[0]) / rig.restHandLen
+    this.realScale = this.realScale ? this.realScale + (target - this.realScale) * 0.05 : target
+    rig.root.position.copy(L[0])
+    rig.root.scale.set(mirror * this.realScale, this.realScale, this.realScale)
+    rig.root.updateMatrixWorld(true)
+    // Landmarks in the root's (mirrored for the left hand) space, where the model is a right hand.
+    const inv = rig.root.matrixWorld.clone().invert()
+    const local = L.map((p) => p.clone().applyMatrix4(inv))
+    const dorsal = new THREE.Vector3().crossVectors(
+      new THREE.Vector3().subVectors(local[9], local[0]), new THREE.Vector3().subVectors(local[5], local[17])).normalize()
+    const q = new THREE.Quaternion(), delta = new THREE.Quaternion(), parentQ = new THREE.Quaternion()
+    const m = new THREE.Matrix4(), s = new THREE.Vector3(), t = new THREE.Vector3()
+    const elbowLocal = this.elbow.clone().applyMatrix4(inv)
+    for (let i = 0; i < REAL_MAP.length; i++) {
+      const [, f, to] = REAL_MAP[i]
+      const dir = i === 0 ? new THREE.Vector3().subVectors(local[0], elbowLocal) : new THREE.Vector3().subVectors(local[to], local[f])
+      if (dir.lengthSq() < 1e-8) continue
+      frame(dir, dorsal, q)
+      delta.copy(q).multiply(rig.restBasis[i].clone().invert())
+      const desired = delta.multiply(rig.restQ[i])
+      const bone = rig.bones[i]
+      m.multiplyMatrices(inv, bone.parent!.matrixWorld).decompose(t, parentQ, s)
+      bone.quaternion.copy(parentQ.invert().multiply(desired))
+      bone.updateMatrixWorld(true)
+      // Turning the forearm end moves the wrist joint: shift the whole hand so the wrist stays on the tracked wrist.
+      if (i === 0) {
+        const w = rig.bones[1].getWorldPosition(new THREE.Vector3())
+        rig.root.position.add(new THREE.Vector3().subVectors(L[0], w))
+        rig.root.updateMatrixWorld(true)
+        inv.copy(rig.root.matrixWorld).invert()
+      }
+    }
+    // The back of the hand, in world space, for grabbing (as for the WebXR hand).
+    const dirW = new THREE.Vector3().subVectors(L[9], L[0]).normalize()
+    const thumbSide = new THREE.Vector3().subVectors(L[5], L[17]).normalize()
+    this.dorsal.crossVectors(this.side === 'right' ? dirW : thumbSide, this.side === 'right' ? thumbSide : dirW).normalize()
   }
 
   async load(url: string) {
@@ -68,15 +352,42 @@ export class RiggedHand {
     const mesh = armature.getObjectByProperty('type', 'SkinnedMesh') as THREE.SkinnedMesh
     mesh.frustumCulled = false
     mesh.castShadow = true
-    this.material = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.62, metalness: 0, emissive: new THREE.Color(0x3bb3bd), emissiveIntensity: 0 })
     mesh.material = this.material
     this.bones = JOINTS.map((n) => armature.getObjectByName(n) as THREE.Bone)
     this.root.visible = false
   }
 
+  /**
+   * The sleeve from just behind the elbow to its cuff, then the bare wrist into the hand. Uses the
+   * shown (eased) wrist so the forearm and the hand never separate.
+   */
+  private placeForearm() {
+    const wrist = this.landmarks[0]
+    const d = new THREE.Vector3().subVectors(wrist, this.elbow)
+    const len = d.length()
+    if (len < 8) return
+    d.divideScalar(len)
+    // The scanned hand carries a short forearm of its own, so its sleeve reaches nearer the wrist.
+    const cuff = wrist.clone().addScaledVector(d, this.real ? -2.5 : -CUFF_BEFORE_WRIST)
+    const start = this.elbow.clone().addScaledVector(d, -4)
+    const up = new THREE.Vector3(0, 1, 0)
+    // Sleeve: y = 0 at the cuff, y = 1 at the elbow end; its cuff ring stays round (scaled back).
+    const sleeveLen = cuff.distanceTo(start)
+    this.sleeve.position.copy(cuff)
+    this.sleeve.quaternion.setFromUnitVectors(up, d.clone().negate())
+    this.sleeve.scale.set(1, sleeveLen, 1)
+    this.cuff.parent!.scale.set(1, 1 / sleeveLen, 1)
+    // Bare wrist: from inside the sleeve to just inside the hand mesh.
+    const skinStart = cuff.clone().addScaledVector(d, -1.5)
+    this.bareWrist.position.copy(skinStart)
+    this.bareWrist.quaternion.setFromUnitVectors(up, d)
+    this.bareWrist.scale.set(1, skinStart.distanceTo(wrist) + 0.8, 1)
+  }
+
   /** Glow while the camera sees a closed hand (0.6) or the hand holds something (1). */
   setGripFeedback(level: number) {
     if (this.material) this.material.emissiveIntensity = level * 0.18
+    if (this.real) this.real.material.emissiveIntensity = level * 0.18
   }
 
   /**
@@ -92,19 +403,23 @@ export class RiggedHand {
         this.target[i].copy(wrist).add(ue(p[0] - o[0], p[1] - o[1], p[2] - o[2]))
       }
     } else {
-      this.openHandAlongForearm(arm, wrist)
+      this.openHandAlongForearm(arm, wrist, hand?.tracked && hand.curls.length === 5 ? handFromCurls(hand.curls) : OPEN_RIGHT)
     }
     // The camera gives ~30 updates a second and the screen draws 60+: ease between them so the hand
     // glides instead of stepping, and jump straight there when it reappears or truly moved far.
     const far = this.landmarks[0].distanceTo(this.target[0]) > FOLLOW_SNAP_CM
     const k = this.snap || far ? 1 : 1 - Math.exp(-dt * FOLLOW_RATE)
     for (let i = 0; i < 21; i++) this.landmarks[i].lerp(this.target[i], k)
+    this.elbowTarget.copy(EYES).add(ue(...arm.elbow))
+    this.elbow.lerp(this.elbowTarget, k)
     this.snap = false
-    this.pose()
+    if (this.real) this.poseReal(this.real)
+    else this.pose()
+    this.placeForearm()
   }
 
   /** No finger tracking: an open hand along the forearm, palm down (three.js axes: x right, y up, -z forward). */
-  private openHandAlongForearm(arm: ArmSample, wrist: THREE.Vector3) {
+  private openHandAlongForearm(arm: ArmSample, wrist: THREE.Vector3, shape: Vec[] = OPEN_RIGHT) {
     const f = ue(arm.wrist[0] - arm.elbow[0], arm.wrist[1] - arm.elbow[1], arm.wrist[2] - arm.elbow[2]).normalize()
     if (f.lengthSq() < 0.5) f.set(0, 0, -1)
     const right = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).normalize()
@@ -112,7 +427,7 @@ export class RiggedHand {
     const up = new THREE.Vector3().crossVectors(right, f).normalize()
     const mirror = this.side === 'left' ? -1 : 1
     for (let i = 0; i < 21; i++) {
-      const [x, y, z] = OPEN_RIGHT[i]
+      const [x, y, z] = shape[i]
       this.target[i].copy(wrist).addScaledVector(f, x).addScaledVector(right, y * mirror).addScaledVector(up, z)
     }
   }
@@ -148,6 +463,7 @@ export class RiggedHand {
     if (!v) this.snap = true
     this.visible = v
     this.root.visible = v
+    this.forearm.visible = v
   }
 
   get palm(): THREE.Vector3 {

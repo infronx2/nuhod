@@ -4,6 +4,12 @@
  */
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import { loadEnvironment, preloadModels, setMaxAnisotropy } from './assets'
 import { buildMajlis } from './majlis'
 import { RiggedHand } from './hands'
 import { HandInput } from './input'
@@ -21,6 +27,19 @@ const HANDTEST = typeof window !== 'undefined' && new URLSearchParams(window.loc
 /** ?sim replaces the camera with a scripted patient (testing without a camera). */
 const SIM = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sim')
 const HANDTEST_OPEN = HANDTEST && new URLSearchParams(window.location.search).get('handtest') === 'open'
+const HANDCAM = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('handcam')
+/** ?quality=ultra|high|low pins the render quality (otherwise it adapts to the device's frame rate). */
+const FORCED_QUALITY = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('quality') : null
+
+/**
+ * Render quality. ultra: ambient occlusion + glow + 4x MSAA (iPad Pro, recent iPhones, desktops).
+ * high: glow + MSAA. low: the plain renderer. The game starts at the best level the device suggests and
+ * steps down once if the frame rate stays low, so a slower phone keeps the tracking smooth.
+ */
+type Quality = 'ultra' | 'high' | 'low'
+const QUALITY_ORDER: Quality[] = ['ultra', 'high', 'low']
+/** Render frames per second below which the game steps down a level (measured over 3 s). */
+const STEP_DOWN_FPS = 42
 
 export interface HudState {
   instruction: string
@@ -53,20 +72,28 @@ export class Game {
   private fps = 0
   private running = false
   private resizeObserver: ResizeObserver
+  private quality: Quality
+  private composer: EffectComposer | null = null
+  private gtao: GTAOPass | null = null
+  private renderFrames = 0
+  private renderFpsT = 0
+  private qualityChecks = 0
 
   constructor(private container: HTMLElement, private video: HTMLVideoElement, private plan: Plan,
     private onHud: (s: HudState) => void, private onFinish: (reason: 'goal') => void) {
     const lowEnd = (navigator.hardwareConcurrency ?? 4) <= 4
+    this.quality = (QUALITY_ORDER as string[]).includes(FORCED_QUALITY ?? '') ? FORCED_QUALITY as Quality : lowEnd ? 'high' : 'ultra'
     this.renderer = new THREE.WebGLRenderer({ antialias: !lowEnd, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.25 : 1.75))
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFShadowMap
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
+    this.renderer.toneMappingExposure = 1.0
+    setMaxAnisotropy(this.renderer.capabilities.getMaxAnisotropy())
     container.appendChild(this.renderer.domElement)
 
     this.scene.background = new THREE.Color(0x1d140d)
-    // Soft room reflections so brass and porcelain read as metal and glaze, not black.
+    // Soft room reflections right away; the real interior HDRI replaces them once it has loaded.
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
     this.scene.environmentIntensity = 0.35
@@ -79,7 +106,7 @@ export class Game {
     this.camera.lookAt(EYES.clone().add(ue(115, 0, -50)))
     this.scene.add(this.camera)
 
-    for (const h of Object.values(this.hands)) this.scene.add(h.root)
+    for (const h of Object.values(this.hands)) this.scene.add(h.root, h.forearm)
     this.input = new HandInput(this.hands, () => this.director.grabbables(), {
       onGrab: (pinch, side) => this.record.recordGrab(pinch, side === 'right'),
       onGripSample: (c, p) => this.record.recordGrip(c, p),
@@ -88,25 +115,80 @@ export class Game {
     this.director = new TaskDirector(this.scene, this.input, this.record, plan,
       { say: (e, i) => this.voice.say(e, i), finish: (r) => this.onFinish(r) }, () => this.arms)
 
+    this.buildComposer()
     this.resizeObserver = new ResizeObserver(() => this.resize())
     this.resizeObserver.observe(container)
     this.resize()
   }
 
   async load() {
-    await Promise.all([this.hands.right.load('/play/hands/right.glb'), this.hands.left.load('/play/hands/left.glb')])
+    await Promise.all([
+      // The realistic scanned hand; the WebXR hand if it cannot load.
+      this.hands.right.loadRealistic('/play/assets/models/hand_realistic.glb').catch((e) => {
+        console.warn('[play] realistic hand not loaded, using the WebXR hand', e)
+        return this.hands.right.load('/play/hands/right.glb')
+      }),
+      this.hands.left.loadRealistic('/play/assets/models/hand_realistic.glb').catch(() => this.hands.left.load('/play/hands/left.glb')),
+      preloadModels(),
+      loadEnvironment(this.renderer, this.scene, 0.6),
+    ])
     if (SIM) this.sim = new SimPatient()
     else this.tracker = await Tracker.create('/play')
+  }
+
+  /** The effect chain for the current quality (none at 'low'): AO, glow on the lit lantern and windows, MSAA. */
+  private buildComposer() {
+    this.composer?.dispose()
+    this.composer = null
+    this.gtao?.dispose()
+    this.gtao = null
+    if (this.quality === 'low') return
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
+    const composer = new EffectComposer(this.renderer, target)
+    composer.addPass(new RenderPass(this.scene, this.camera))
+    if (this.quality === 'ultra') {
+      // The room is in centimetres: a 14 cm radius darkens the contact between hands, cups and the table.
+      const gtao = new GTAOPass(this.scene, this.camera, 1, 1)
+      gtao.blendIntensity = 0.75
+      gtao.updateGtaoMaterial({ radius: 14, distanceExponent: 1.5, thickness: 6, scale: 1, samples: 12 })
+      gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 })
+      composer.addPass(gtao)
+      this.gtao = gtao
+    }
+    // Only real light sources bloom: the lit lantern's glass and flame, and the sunlit windows.
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.2, 0.45, 0.92))
+    composer.addPass(new OutputPass())
+    this.composer = composer
   }
 
   private resize() {
     const w = this.container.clientWidth, h = this.container.clientHeight
     if (!w || !h) return
     this.renderer.setSize(w, h)
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio())
+    this.composer?.setSize(w, h)
     this.camera.aspect = w / h
     // Keep the table and the hooks in view in portrait too.
     this.camera.fov = w / h < 1 ? 82 : 62
     this.camera.updateProjectionMatrix()
+  }
+
+  /** Steps the quality down a level (at most twice) when the screen keeps drawing too few frames. */
+  private adaptQuality(t: number) {
+    this.renderFrames++
+    if (!this.renderFpsT) this.renderFpsT = t
+    if (t - this.renderFpsT < 3000) return
+    const fps = (this.renderFrames * 1000) / (t - this.renderFpsT)
+    this.renderFrames = 0
+    this.renderFpsT = t
+    if (FORCED_QUALITY || this.qualityChecks++ < 1) return // the first window includes loading
+    const i = QUALITY_ORDER.indexOf(this.quality)
+    if (fps < STEP_DOWN_FPS && i < QUALITY_ORDER.length - 1) {
+      this.quality = QUALITY_ORDER[i + 1]
+      console.info(`[play] ${Math.round(fps)} fps, render quality now ${this.quality}`)
+      this.buildComposer()
+      this.resize()
+    }
   }
 
   /** Tracking only (for the "can the camera see you" step), without the tasks. */
@@ -160,7 +242,15 @@ export class Game {
     }
     this.input.update(now, dt)
     if (this.running) this.director.update(dt)
-    this.renderer.render(this.scene, this.camera)
+    if (HANDCAM && this.hands.right.visible) {
+      // ?handcam: a close camera on the right hand, to check the fingers and the wrist.
+      const p = this.hands.right.palm
+      this.camera.position.copy(p).add(new THREE.Vector3(-14, 16, 22))
+      this.camera.lookAt(p)
+    }
+    if (this.composer) this.composer.render(dt)
+    else this.renderer.render(this.scene, this.camera)
+    this.adaptQuality(t)
 
     const f = this.lastFrame
     if (DEBUG) {
@@ -206,6 +296,8 @@ export class Game {
     this.resizeObserver.disconnect()
     this.voice.stop()
     this.tracker?.close()
+    this.composer?.dispose()
+    this.gtao?.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
