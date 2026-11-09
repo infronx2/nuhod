@@ -4,7 +4,16 @@
  * frame, finger curls and pinch, same units: centimetres relative to the midpoint between the eyes,
  * axes [forward, right, up] from the patient's point of view.
  */
-import { FilesetResolver, HandLandmarker, PoseLandmarker, type Landmark } from '@mediapipe/tasks-vision'
+import { FilesetResolver, HandLandmarker, HolisticLandmarker, PoseLandmarker, type Landmark } from '@mediapipe/tasks-vision'
+
+/**
+ * ?holistic (test option): Google's Holistic model instead of the pose and hand models. One model
+ * finds the body and each hand from that arm's wrist, so a hand is tied to its arm from the start
+ * (no left/right guessing) and hands near the face are found more often. Heavier; kept as an
+ * option until it proves better and fast enough on phones.
+ */
+const HOLISTIC = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('holistic')
+const HOLISTIC_MODEL_CDN = 'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task'
 
 export type Vec = [number, number, number]
 export type Side = 'right' | 'left'
@@ -41,6 +50,11 @@ export interface TrackFrame {
   body: boolean
   arms: Partial<Record<Side, ArmSample>>
   hands: Record<Side, HandSample>
+  /**
+   * Both shoulders in the camera image (x, y as fractions of the image width, so distances are
+   * comparable both ways) and how sure the body model is of them: for the compensation check.
+   */
+  trunk?: { left: [number, number]; right: [number, number]; visibility: number }
   /** What the models saw, in image coordinates (0..1), for the inspection overlay (?inspect). */
   image?: { pose?: Landmark[]; hands: Partial<Record<Side, Landmark[]>> }
 }
@@ -140,8 +154,11 @@ const SIDE_CLOSE_CALL = 0.06
 const FINGERS: Array<[number, number, number, number]> = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]]
 
 export class Tracker {
-  private pose!: PoseLandmarker
-  private hands!: HandLandmarker
+  private pose: PoseLandmarker | null = null
+  private hands: HandLandmarker | null = null
+  private holistic: HolisticLandmarker | null = null
+  /** Which models are tracking: 'holistic' or the usual 'pose+hands'. */
+  get mode() { return this.holistic ? 'holistic' : 'pose+hands' }
   // Metres. Depth from one camera is the noisiest axis, so it is smoothed hardest; a rehab reach stays
   // well under 2 m/s.
   private poseFilter = new PointsFilter([[0.9, 2.5], [0.9, 2.5], [0.35, 1.0]], 2.0)
@@ -173,6 +190,22 @@ export class Tracker {
     // phones with little memory, or ?lite.
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
     const lite = (memory !== undefined && memory <= 3) || new URLSearchParams(window.location.search).has('lite')
+    if (HOLISTIC) {
+      const local = `${base}/models/holistic_landmarker.task`
+      const haveLocal = await fetch(local, { method: 'HEAD' }).then((r) => r.ok).catch(() => false)
+      try {
+        t.holistic = await make((delegate) => HolisticLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: haveLocal ? local : HOLISTIC_MODEL_CDN, delegate },
+          runningMode: 'VIDEO',
+          minPoseDetectionConfidence: 0.6, minPosePresenceConfidence: 0.6, minHandLandmarksConfidence: 0.6,
+          minFaceDetectionConfidence: 0.5,
+        }))
+        console.info('[play] tracking with the Holistic model')
+        return t
+      } catch (e) {
+        console.warn('[play] Holistic model failed, using pose + hands', e)
+      }
+    }
     t.pose = await make((delegate) => PoseLandmarker.createFromOptions(files, {
       baseOptions: { modelAssetPath: `${base}/models/pose_landmarker_${lite ? 'lite' : 'full'}.task`, delegate },
       runningMode: 'VIDEO', numPoses: 1,
@@ -210,38 +243,58 @@ export class Tracker {
       hands: { right: emptyHand(), left: emptyHand() },
       image: { hands: {} },
     }
-    const pr = this.pose.detectForVideo(video, timeMs)
-    const poseImage = pr.landmarks?.[0]
+    const vw = (video as HTMLVideoElement).videoWidth || video.width || 1
+    const vh = (video as HTMLVideoElement).videoHeight || video.height || 1
+    const aspect = vh / vw
+
+    // The body and the hands found in this frame, by either set of models.
+    let poseImage: Landmark[] | undefined
+    let poseWorld: Landmark[] | undefined
+    let found: Array<{ side: Side; lm: Landmark[]; world: Landmark[] }> = []
+    if (this.holistic) {
+      const r = this.holistic.detectForVideo(video, timeMs)
+      poseImage = r.poseLandmarks?.[0]
+      poseWorld = r.poseWorldLandmarks?.[0]
+      found = holisticHands(r.rightHandLandmarks?.[0], r.rightHandWorldLandmarks?.[0], r.leftHandLandmarks?.[0], r.leftHandWorldLandmarks?.[0], poseImage)
+    } else {
+      const pr = this.pose!.detectForVideo(video, timeMs)
+      poseImage = pr.landmarks?.[0]
+      poseWorld = pr.worldLandmarks?.[0]
+      const hr = this.hands!.detectForVideo(video, timeMs)
+      if (hr.worldLandmarks?.length && hr.landmarks?.length) {
+        const sides = assignHandSides(hr.landmarks, hr.handedness, poseImage, this.lastWrist)
+        found = (Object.entries(sides) as Array<[Side, number]>).map(([side, i]) => ({ side, lm: hr.landmarks[i], world: hr.worldLandmarks[i] }))
+      }
+    }
+
     out.image!.pose = poseImage
-    if (pr.worldLandmarks?.[0] && poseImage) {
-      const raw = pr.worldLandmarks[0]
-      const vis = raw.map((p) => p.visibility ?? 1)
-      const world = this.poseFilter.apply(raw.map((p) => [p.x, p.y, p.z] as Vec), t, vis.map((v) => v < UNSURE_VISIBILITY))
+    if (poseImage) {
+      const ls = poseImage[L_SH], rs = poseImage[R_SH]
+      out.trunk = {
+        left: [ls.x, ls.y * aspect], right: [rs.x, rs.y * aspect],
+        visibility: Math.min(ls.visibility ?? 1, rs.visibility ?? 1),
+      }
+    }
+    if (poseWorld && poseImage) {
+      const vis = poseWorld.map((p) => p.visibility ?? 1)
+      const world = this.poseFilter.apply(poseWorld.map((p) => [p.x, p.y, p.z] as Vec), t, vis.map((v) => v < UNSURE_VISIBILITY))
       out.body = true
       out.arms = this.extractArms(world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 })), vis, t)
     }
 
-    const hr = this.hands.detectForVideo(video, timeMs)
-    if (hr.worldLandmarks?.length && hr.landmarks?.length) {
-      const sides = assignHandSides(hr.landmarks, hr.handedness, poseImage, this.lastWrist)
-      for (const [side, i] of Object.entries(sides) as Array<[Side, number]>) {
-        this.lastWrist[side] = hr.landmarks[i][0]
-        out.image!.hands[side] = hr.landmarks[i]
-        const world = this.handFilters[side].apply(hr.worldLandmarks[i].map((p) => [p.x, p.y, p.z] as Vec), t)
-        const Hd = world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 }))
-        const { dir, normal } = handFrame(Hd, side)
-        const lm = hr.landmarks[i]
-        const vw = (video as HTMLVideoElement).videoWidth || video.width || 1
-        const vh = (video as HTMLVideoElement).videoHeight || video.height || 1
-        const aspect = vh / vw
-        const image = {
-          x: lm[0].x, y: lm[0].y, aspect,
-          size: Math.hypot(lm[9].x - lm[0].x, (lm[9].y - lm[0].y) * aspect),
-          lengthCm: norm(sub(Hd[9], Hd[0])),
-        }
-        out.hands[side] = { tracked: true, points: Hd, dir, normal, curls: fingerCurls(Hd), pinchCm: norm(sub(Hd[4], Hd[8])), image }
-        this.handLastSeen[side] = t
+    for (const { side, lm, world: raw } of found) {
+      this.lastWrist[side] = lm[0]
+      out.image!.hands[side] = lm
+      const world = this.handFilters[side].apply(raw.map((p) => [p.x, p.y, p.z] as Vec), t)
+      const Hd = world.map((p) => toGame({ x: p[0], y: p[1], z: p[2], visibility: 1 }))
+      const { dir, normal } = handFrame(Hd, side)
+      const image = {
+        x: lm[0].x, y: lm[0].y, aspect,
+        size: Math.hypot(lm[9].x - lm[0].x, (lm[9].y - lm[0].y) * aspect),
+        lengthCm: norm(sub(Hd[9], Hd[0])),
       }
+      out.hands[side] = { tracked: true, points: Hd, dir, normal, curls: fingerCurls(Hd), pinchCm: norm(sub(Hd[4], Hd[8])), image }
+      this.handLastSeen[side] = t
     }
     for (const side of ['right', 'left'] as Side[]) {
       if (!out.hands[side].tracked && t - this.handLastSeen[side] > HAND_LOST_RESET_S) {
@@ -284,7 +337,37 @@ export class Tracker {
   close() {
     this.pose?.close()
     this.hands?.close()
+    this.holistic?.close()
   }
+}
+
+/**
+ * The Holistic model's two hands, each on the patient's side. It finds each hand from that arm's
+ * wrist; as a guard (its left/right naming is not documented for an unmirrored camera), a hand
+ * whose wrist sits clearly nearer the other arm's wrist is moved to that side.
+ */
+function holisticHands(
+  rightLm: Landmark[] | undefined, rightWorld: Landmark[] | undefined,
+  leftLm: Landmark[] | undefined, leftWorld: Landmark[] | undefined,
+  pose: Landmark[] | undefined,
+): Array<{ side: Side; lm: Landmark[]; world: Landmark[] }> {
+  const hands: Array<{ side: Side; lm: Landmark[]; world: Landmark[] }> = []
+  if (rightLm?.length === 21 && rightWorld?.length === 21) hands.push({ side: 'right', lm: rightLm, world: rightWorld })
+  if (leftLm?.length === 21 && leftWorld?.length === 21) hands.push({ side: 'left', lm: leftLm, world: leftWorld })
+  if (!pose) return hands
+  const near = (h: Landmark[], w: number) => Math.hypot(h[0].x - pose[w].x, h[0].y - pose[w].y)
+  for (const h of hands) {
+    const own = near(h.lm, h.side === 'right' ? R_WR : L_WR)
+    const other = near(h.lm, h.side === 'right' ? L_WR : R_WR)
+    if (other + SIDE_CLOSE_CALL < own) h.side = h.side === 'right' ? 'left' : 'right'
+  }
+  // Both ended on one side: keep the nearer one there.
+  if (hands.length === 2 && hands[0].side === hands[1].side) {
+    const w = hands[0].side === 'right' ? R_WR : L_WR
+    const far = near(hands[0].lm, w) > near(hands[1].lm, w) ? 0 : 1
+    hands[far].side = hands[far].side === 'right' ? 'left' : 'right'
+  }
+  return hands
 }
 
 function emptyHand(): HandSample {

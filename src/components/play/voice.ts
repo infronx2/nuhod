@@ -36,5 +36,26 @@ export class Voice {
     void this.audio.play().catch(() => undefined)
   }
 
-  stop() { this.audio.pause() }
+  /**
+   * A sentence with no recorded clip yet (calibration, posture reminders): the device's own Arabic
+   * voice, when it has one. Waits its turn behind a recorded line unless `interrupt`.
+   */
+  speak(text: string, interrupt = false) {
+    if (this.muted || typeof speechSynthesis === 'undefined') return
+    if (!interrupt && performance.now() < this.busyUntil) return
+    const voice = speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith('ar'))
+    if (!voice) return
+    speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.voice = voice
+    u.lang = voice.lang
+    u.rate = 0.95
+    this.busyUntil = performance.now() + 3500
+    speechSynthesis.speak(u)
+  }
+
+  stop() {
+    this.audio.pause()
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
+  }
 }

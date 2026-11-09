@@ -19,6 +19,8 @@ import { Tracker, type ArmSample, type Side, type TrackFrame } from './tracking'
 import { Voice } from './voice'
 import { SimPatient } from './sim'
 import { EYES, ue } from './space'
+import { Calibration } from './calibration'
+import { PostureWatch, type Compensation } from './posture'
 
 /** ?debug in the address exposes tracking values on window.__nuhoud. */
 const DEBUG = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')
@@ -32,6 +34,14 @@ const HANDCAM = typeof window !== 'undefined' && new URLSearchParams(window.loca
 const INSPECT = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('inspect')
 /** ?mirror: flip each picture before tracking (a recording saved mirrored, as many selfie videos are). */
 const MIRROR = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mirror')
+/** ?nocalib skips the per-hand calibration at the start (testing). */
+const NOCALIB = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('nocalib')
+/** Shortest gap between two spoken posture reminders (s). */
+const POSTURE_REMINDER_GAP_S = 20
+const POSTURE_REMINDER: Record<Compensation, string> = {
+  lean: 'خلّ ظهرك ثابت، ومدّ ذراعك براحة',
+  hike: 'نزّل كتفك وارخه، وارفع ذراعك براحة',
+}
 
 const HAND_LINKS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
   [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]]
@@ -90,6 +100,13 @@ export class Game {
   private inspectCanvas: HTMLCanvasElement | null = null
   /** Running counts for ?inspect: frames tracked, and how often the body and each hand were found. */
   readonly inspect = { frames: 0, body: 0, right: 0, left: 0, both: 0 }
+  /** The per-hand calibration while it runs (before the first task). */
+  private calibration: Calibration | null = null
+  readonly posture = new PostureWatch()
+  private lastReminder = -1e9
+  /** A posture reminder shown for a few seconds over the task instruction. */
+  private reminder = ''
+  private reminderTime = 0
 
   constructor(private container: HTMLElement, private video: HTMLVideoElement, private plan: Plan,
     private onHud: (s: HudState) => void, private onFinish: (reason: 'goal') => void) {
@@ -218,7 +235,40 @@ export class Game {
 
   start() {
     this.running = true
+    const sides = (['right', 'left'] as Side[]).filter((s) => this.input.active[s])
+    if (NOCALIB || !sides.length) {
+      this.director.start()
+      return
+    }
+    this.calibration = new Calibration(sides)
+    this.calibration.onStep = (text) => this.voice.speak(text, true)
+  }
+
+  private calibrationInput = {
+    visible: (s: Side) => this.input.isVisible(s),
+    closure: (s: Side) => this.input.closure(s),
+    pinchCm: (s: Side) => this.input.pinchCm(s),
+  }
+
+  /** The calibration finished: fit each hand's thresholds and display, then the first task. */
+  private finishCalibration(c: Calibration) {
+    for (const [side, range] of Object.entries(c.results) as Array<[Side, NonNullable<Calibration['results'][Side]>]>) {
+      this.input.calibrate(side, range)
+      this.hands[side].setBestFist(range.fist)
+      console.info(`[play] ${side} hand range: open ${range.open.toFixed(2)}, fist ${range.fist.toFixed(2)}, pinch ${range.pinchCm.toFixed(1)} cm`)
+    }
+    this.calibration = null
     this.director.start()
+  }
+
+  /** A compensation started during a task: count it, and remind gently now and then. */
+  private onCompensation(kind: Compensation, now: number) {
+    this.record.compensations++
+    if (now - this.lastReminder < POSTURE_REMINDER_GAP_S) return
+    this.lastReminder = now
+    this.reminder = POSTURE_REMINDER[kind]
+    this.reminderTime = 4
+    this.voice.speak(this.reminder)
   }
 
   private loop = (t: number) => {
@@ -246,6 +296,12 @@ export class Game {
         if (arm?.tracked) this.arms[side] = arm
         this.input.feed(side, arm, HANDTEST_OPEN ? { ...f.hands[side], tracked: false } : f.hands[side], now)
       }
+      // Posture: the resting shape while calibrating, the compensation check during a task.
+      if (this.calibration) this.posture.observeRest(f)
+      else if (this.running && this.director.active && !this.sim) {
+        const kind = this.posture.update(f, this.director.taskSide, dt)
+        if (kind) this.onCompensation(kind, now)
+      }
       if (this.running) {
         // The reaching arm's shoulder elevation and elbow angle, for the doctor's charts.
         const active = (['right', 'left'] as Side[]).filter((s) => this.input.active[s] && f.arms[s]?.tracked)
@@ -261,7 +317,11 @@ export class Game {
       this.fpsT = t
     }
     this.input.update(now, dt)
-    if (this.running) this.director.update(dt)
+    if (this.calibration) {
+      this.calibration.update(dt, this.calibrationInput)
+      if (this.calibration.done) this.finishCalibration(this.calibration)
+    } else if (this.running) this.director.update(dt)
+    this.reminderTime = Math.max(0, this.reminderTime - dt)
     if (HANDCAM && this.hands.right.visible) {
       // ?handcam: a close camera on the right hand, to check the fingers and the wrist.
       const p = this.hands.right.palm
@@ -287,10 +347,14 @@ export class Game {
         palm: (['right', 'left'] as Side[]).map((s) => this.hands[s].palm.toArray().map(Math.round)),
         grip: { right: this.input.describe('right'), left: this.input.describe('left') },
         task: this.running ? this.director.task : null,
+        calibrating: !!this.calibration,
+        posture: { ...this.posture.last, compensations: this.record.compensations },
       }
     }
     this.onHud({
-      instruction: this.running ? this.director.instruction() : '',
+      instruction: !this.running ? ''
+        : this.calibration ? this.calibration.instruction(this.calibrationInput)
+          : this.reminderTime > 0 ? this.reminder : this.director.instruction(),
       done: this.record.reps,
       goal: this.plan.dailyTasks,
       score: this.record.score,

@@ -41,6 +41,8 @@ class SideState {
   dwellTime = 0
   prevPalm: THREE.Vector3 | null = null
   palmVelocity = new THREE.Vector3()
+  /** The hand's closure when opened as far as the patient can (from the calibration; 0 if none). */
+  openClosure = 0
   /** The last moment both the arm and the hand were seen: the arm then, and the hand in the image. */
   anchor: { arm: ArmSample; image: NonNullable<HandSample['image']>; t: number } | null = null
 }
@@ -102,6 +104,18 @@ export class HandInput {
   palm(side: Side) { return this.hands[side].palm }
   holding(side: Side) { return this.s[side].held }
   closure(side: Side) { return this.s[side].closure }
+  pinchCm(side: Side) { return this.s[side].hand?.pinchCm ?? 99 }
+
+  /**
+   * This patient's range for one hand, from the calibration: the fist threshold sits between their
+   * most open and most closed hand, and the pinch threshold just above their closest pinch.
+   */
+  calibrate(side: Side, range: { open: number; fist: number; pinchCm: number }) {
+    const st = this.s[side]
+    st.openClosure = range.open
+    st.closureCeiling = Math.max(st.closureCeiling, range.fist)
+    if (range.pinchCm < 30) st.pinchFloor = range.pinchCm
+  }
 
   update(now: number, dt: number) {
     for (const side of ['right', 'left'] as Side[]) {
@@ -130,7 +144,12 @@ export class HandInput {
     st.closure = closureOf(st.hand.curls)
     // The grasp threshold follows the patient's best recent closure, so a weak grip still registers.
     st.closureCeiling = Math.max(st.closure, st.closureCeiling - dt * CLOSURE_CEILING_DECAY)
-    st.graspOn = THREE.MathUtils.clamp(st.closureCeiling * 0.62, 0.3, 0.55)
+    // Calibrated: 62% of the way from this patient's open hand to their best fist (a hand that
+    // cannot open fully still has to close clearly). Otherwise from 0, as before.
+    const base = st.openClosure
+    st.graspOn = base > 0
+      ? THREE.MathUtils.clamp(base + (st.closureCeiling - base) * 0.62, Math.max(0.18, base + 0.08), 0.55)
+      : THREE.MathUtils.clamp(st.closureCeiling * 0.62, 0.3, 0.55)
     const graspOff = st.graspOn * 0.6
     // Cameras rarely measure touching fingertips as touching: the pinch threshold sits just above the patient's best pinch.
     st.pinchFloor = Math.min(st.hand.pinchCm, st.pinchFloor + dt * PINCH_FLOOR_RISE)

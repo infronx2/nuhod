@@ -102,7 +102,7 @@ const BOOST = 1.3
  * within a real finger's joint limits; strong bends close a little further so a fist looks closed.
  * The thumb is left as tracked. Works for both hands: the back of the hand comes from the side.
  */
-export function constrainFingers(T: THREE.Vector3[], side: Side) {
+export function constrainFingers(T: THREE.Vector3[], side: Side, gain = 1) {
   const fwdRaw = new THREE.Vector3().subVectors(T[9], T[0])
   const thumbSide = new THREE.Vector3().subVectors(T[5], T[17])
   if (fwdRaw.lengthSq() < 1e-6 || thumbSide.lengthSq() < 1e-6) return
@@ -112,7 +112,7 @@ export function constrainFingers(T: THREE.Vector3[], side: Side) {
   const x = fwdRaw.clone().addScaledVector(n, -fwdRaw.dot(n)).normalize()
   const y = new THREE.Vector3().crossVectors(n, x)
   const rad = THREE.MathUtils.degToRad, deg = THREE.MathUtils.radToDeg
-  const boost = (a: number) => (a <= BOOST_FROM ? a : BOOST_FROM + (a - BOOST_FROM) * BOOST)
+  const boost = (a: number) => (a <= BOOST_FROM ? a : BOOST_FROM + (a - BOOST_FROM) * BOOST * gain)
   const seg = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3()
   for (const base of [5, 9, 13, 17]) {
     const [k, p, d, tip] = [base, base + 1, base + 2, base + 3]
@@ -212,7 +212,7 @@ const REAL_BASES = new Set([2, 6, 10, 14, 18])
  * line up with the back of the hand (at a 90° bend) but never with the hand's width (index → little
  * finger knuckles): they use the width. The thumb, the hand and the forearm use the back of the hand.
  */
-const useWidth = (i: number) => i >= 6
+const rollFromWidth = (i: number) => i >= 6
 /**
  * The thumb's three phalanges cannot twist on their own: each one keeps its parent's roll and only
  * swings to its tracked direction. (A roll taken from the back of the hand flips when the thumb
@@ -314,6 +314,14 @@ export class RiggedHand {
   visible = false
   /** Rebuild the four fingers from their bend angles within a real hand's limits (see constrainFingers). */
   anatomy = true
+  /**
+   * Extra closing shown for a patient whose best fist (from the calibration) is weak, so their best
+   * effort reads as a closed hand on screen. Display only: the recorded grip stays as measured.
+   */
+  flexGain = 1
+  setBestFist(closure: number) {
+    this.flexGain = THREE.MathUtils.clamp(0.85 / Math.max(closure, 0.3), 1, 1.35)
+  }
 
   constructor(readonly side: Side) {
     this.root.scale.setScalar(100) // the asset is in metres, the scene in centimetres
@@ -400,7 +408,7 @@ export class RiggedHand {
       const dir = i === 0 ? new THREE.Vector3().subVectors(wp(bones[1]!), wp(bones[0]!))
         : REAL_BASES.has(i) ? new THREE.Vector3().subVectors(P[t], wp(bones[i]!))
           : new THREE.Vector3().subVectors(P[t], P[f])
-      return useWidth(i) ? frame(dir, restWidth, restDorsal, new THREE.Quaternion()) : frame(dir, restDorsal, restWidth, new THREE.Quaternion())
+      return rollFromWidth(i) ? frame(dir, restWidth, restDorsal, new THREE.Quaternion()) : frame(dir, restDorsal, restWidth, new THREE.Quaternion())
     })
     const restLocal = bones.map((b) => b!.quaternion.clone())
     const restDirLocal = REAL_MAP.map(([, f, t], i) =>
@@ -471,7 +479,7 @@ export class RiggedHand {
         bone.updateMatrixWorld(true)
         continue
       }
-      if (useWidth(i)) frame(dir, width, dorsal, q)
+      if (rollFromWidth(i)) frame(dir, width, dorsal, q)
       else frame(dir, dorsal, width, q)
       delta.copy(q).multiply(rig.restBasis[i].clone().invert())
       const desired = delta.multiply(rig.restQ[i])
@@ -564,7 +572,7 @@ export class RiggedHand {
         const p = hand.points[i]
         this.target[i].copy(wrist).add(ue(p[0] - o[0], p[1] - o[1], p[2] - o[2]))
       }
-      if (this.anatomy) constrainFingers(this.target, this.side)
+      if (this.anatomy) constrainFingers(this.target, this.side, this.flexGain)
       for (let i = 0; i < 21; i++) this.heldShape[i].subVectors(this.target[i], wrist)
       this.heldShapeAge = 0
     } else if (this.heldShapeAge < HOLD_SHAPE_S) {

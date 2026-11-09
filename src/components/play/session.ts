@@ -27,6 +27,8 @@ export class SessionRecord {
   rightGrabs = 0
   leftGrabs = 0
   painStop = false
+  /** Reaches made by leaning the trunk or hitching the shoulder (see posture.ts). */
+  compensations = 0
   private timeline: number[] = []
   private interval = 1
   private lastSample = 0
@@ -92,7 +94,7 @@ export class SessionRecord {
       durationSeconds: Math.round(this.seconds),
       totalReps: this.attempts,
       correctReps: Math.max(0, this.reps - this.assisted),
-      compensationErrors: 0,
+      compensationErrors: this.compensations,
       gamificationScore: this.score,
       maxAchievedAngle: r1(this.maxAngle),
       avgShoulderAngle: r1(this.avgAngle),
