@@ -12,7 +12,7 @@
 import { complete, type LlmMessage } from './deepseek'
 import { classify, fixedReply } from './safety'
 import {
-  getPlan, getProgress, getRecentSessions, listPatients, patientProfile, runTool, toolsFor,
+  getPlan, getProgress, getRecentSessions, getTrends, listPatients, patientProfile, runTool, toolsFor,
   type MuinMode, type PlanProposal, type ToolContext,
 } from './tools'
 
@@ -87,12 +87,13 @@ async function contextData(ctx: ToolContext) {
     return { patients: await listPatients(ctx) }
   }
   const id = ctx.patientId!
-  const [profile, progress, sessions] = await Promise.all([patientProfile(id), getProgress(id), getRecentSessions(id, 3)])
+  const [profile, progress, sessions, trends] = await Promise.all([patientProfile(id), getProgress(id), getRecentSessions(id, 3), getTrends(id)])
   return {
     profile: profile && { ageBand: profile.ageBand, affectedSide: profile.affectedSide },
     plan: profile?.plan ?? null,
     progress,
     recentSessions: sessions,
+    trends,
   }
 }
 
@@ -115,7 +116,7 @@ const INSTRUCTIONS: Record<MuinMode, string> = {
   patient: `${COMMON}
 You are talking to the patient. Encourage with real progress from DATA, explain what a number means in daily life, and give one small next step. Tired is fine: suggest a short session or rest. Never push past pain.`,
   doctor_patient: `${COMMON}
-You are talking to the treating doctor about one patient: be clinically precise (max angle against target, grip, pinch, adherence, assisted tasks, compensation, pain stops). If the doctor asks for a plan change, or DATA clearly supports one (target met in 3 recent sessions, or many assisted tasks or pain stops), call propose_plan_change with small steps (angle 5-10°, daily goal 2-5) and a one-sentence reason citing DATA, in the conversation's language; the doctor approves it on a card.`,
+You are talking to the treating doctor about one patient: be clinically precise (DATA.trends holds computed trend, projection, plateau and unusual-session flags: explain them, never recompute; max angle against target, grip, pinch, adherence, assisted tasks, compensation, pain stops). If the doctor asks for a plan change, or DATA clearly supports one (target met in 3 recent sessions, or many assisted tasks or pain stops), call propose_plan_change with small steps (angle 5-10°, daily goal 2-5) and a one-sentence reason citing DATA, in the conversation's language; the doctor approves it on a card.`,
   doctor_roster: `${COMMON}
 You are talking to the treating doctor about all patients. DATA lists them as codes (P1, P2...): refer to them only by code. Prioritise pain stops, 3+ days without a session, an angle trend of -5° or worse, an assisted share of 0.5+, sessions this week below the plan.`,
 }

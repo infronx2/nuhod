@@ -276,3 +276,60 @@ function dayKey(d: Date) {
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n))
 }
+
+/**
+ * Simple machine learning on the patient's own sessions, computed here (never by the language
+ * model): a least-squares trend of the best shoulder angle per week, the days it projects to reach
+ * the plan's target, and whether the last session is unusual for this patient (z-score against
+ * their previous sessions: a sudden drop can be a tracking problem or a health change).
+ */
+export async function getTrends(patientId: string) {
+  const [rows, plan] = await Promise.all([
+    db.rehabSession.findMany({
+      where: { patientId },
+      orderBy: { sessionDate: 'asc' },
+      take: 60,
+      select: { sessionDate: true, maxAchievedAngle: true, gripClosureMax: true, compensationErrors: true, painStop: true },
+    }),
+    db.treatmentPlan.findFirst({ where: { patientId, active: true }, orderBy: { createdAt: 'desc' }, select: { targetAngle: true } }),
+  ])
+  if (rows.length < 3) return { enoughData: false, sessions: rows.length }
+  const t0 = rows[0].sessionDate.getTime()
+  const xs = rows.map((r) => (r.sessionDate.getTime() - t0) / 86_400_000)
+  const fit = (ys: number[]) => {
+    const n = ys.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n
+    let sxy = 0, sxx = 0
+    for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2 }
+    const slope = sxx > 0 ? sxy / sxx : 0
+    const res = ys.map((y, i) => y - (my + slope * (xs[i] - mx)))
+    const sd = Math.sqrt(res.reduce((a, r) => a + r * r, 0) / Math.max(1, n - 2))
+    return { slopePerDay: slope, intercept: my - slope * mx, sd }
+  }
+  const angles = rows.map((r) => r.maxAchievedAngle)
+  const a = fit(angles)
+  const lastX = xs[xs.length - 1]
+
+
+  const fitted = a.intercept + a.slopePerDay * lastX
+  const target = plan?.targetAngle ?? null
+  const daysToTarget = target !== null && a.slopePerDay > 0.05 && fitted < target
+    ? Math.round((target - fitted) / a.slopePerDay) : null
+  // Last session against the earlier ones.
+  const prev = angles.slice(0, -1)
+  const mean = prev.reduce((s, v) => s + v, 0) / prev.length
+  const sd = Math.sqrt(prev.reduce((s, v) => s + (v - mean) ** 2, 0) / Math.max(1, prev.length - 1))
+  const z = sd > 0.5 ? (angles[angles.length - 1] - mean) / sd : 0
+  const recent = rows.slice(-5)
+  return {
+    enoughData: true,
+    sessions: rows.length,
+    angleTrendDegPerWeek: Math.round(a.slopePerDay * 7 * 10) / 10,
+    trendFitSdDeg: Math.round(a.sd * 10) / 10,
+    projectedDaysToTarget: daysToTarget,
+    plateau: Math.abs(a.slopePerDay * 7) < 1 && rows.length >= 6,
+    lastSessionUnusual: Math.abs(z) >= 2 ? (z < 0 ? 'drop' : 'jump') : null,
+    lastSessionZ: Math.round(z * 10) / 10,
+    recentCompensationPerSession: Math.round((recent.reduce((s, r) => s + r.compensationErrors, 0) / recent.length) * 10) / 10,
+    recentPainStops: recent.filter((r) => r.painStop).length,
+  }
+}
