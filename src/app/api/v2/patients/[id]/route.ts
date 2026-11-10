@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
-import { canAccessPatient, isStaff } from '@/lib/access'
+import { canAccessPatient, isAdmin, isStaff } from '@/lib/access'
 import { audit } from '@/lib/audit'
 import { PATIENT_EMAIL_DOMAIN } from '@/lib/patient-accounts'
 
@@ -36,6 +36,7 @@ export async function GET(
       createdAt: true,
       username: true,
       active: true,
+      archivedAt: true,
       consentSignedAt: true,
       patientConsentAt: true,
       _count: { select: { passkeys: true } },
@@ -101,4 +102,32 @@ export async function GET(
     aggregate,
     isDoctor,
   })
+}
+
+// DELETE /api/v2/patients/[id]: erase an archived patient and all their records, for good.
+// Admins only; body { confirmName } must match the patient's name. The access log keeps an entry
+// that a patient was erased (without the name).
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const payload = getUserFromRequest(req)
+  if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
+  if (!isAdmin(payload)) return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
+  const { id } = await ctx.params
+  const body = await req.json().catch(() => null)
+  const patient = await db.user.findUnique({ where: { id }, select: { role: true, name: true, archivedAt: true } })
+  if (!patient || patient.role !== 'PATIENT') return NextResponse.json({ ok: false, error: 'patient not found' }, { status: 404 })
+  if (!patient.archivedAt) return NextResponse.json({ ok: false, error: 'archive the patient first' }, { status: 409 })
+  if (String(body?.confirmName ?? '').trim() !== patient.name.trim()) {
+    return NextResponse.json({ ok: false, error: 'name does not match' }, { status: 400 })
+  }
+  await db.$transaction([
+    // Records without a database link to the patient; the rest go with the patient (cascade).
+    db.chatMessage.deleteMany({ where: { OR: [{ patientId: id }, { speakerId: id }] } }),
+    db.notification.deleteMany({ where: { userId: id } }),
+    db.streak.deleteMany({ where: { userId: id } }),
+    db.rehabGoal.deleteMany({ where: { patientId: id } }),
+    db.loginToken.deleteMany({ where: { userId: id } }),
+    db.user.delete({ where: { id } }),
+  ])
+  await audit(req, { actorId: payload.sub, action: 'patient_deleted', patientId: id })
+  return NextResponse.json({ ok: true })
 }

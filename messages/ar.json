@@ -798,6 +798,7 @@
     "audit_passkey_added": "تفعيل الدخول بالوجه",
     "audit_passkey_removed": "إلغاء الدخول بالوجه",
     "audit_patient_created": "إنشاء الحساب",
+    "audit_patient_deleted": "حذف المريض نهائياً",
     "audit_patient_viewed": "فتح الملف",
     "audit_patient_updated": "تعديل الحساب",
     "audit_pin_reset": "رمز جديد",
@@ -807,6 +808,17 @@
     "audit_measure_deleted": "حذف قياس",
     "audit_consent_patient": "موافقة المريض في التطبيق",
     "audit_export": "تصدير بيانات",
-    "audit_pain_alert": "تنبيه ألم قبل الجلسة"
+    "audit_pain_alert": "تنبيه ألم قبل الجلسة",
+    "archivePatient": "حذف المريض",
+    "restorePatient": "استرجاع المريض",
+    "erasePatient": "حذف نهائي",
+    "confirm_archive": "حذف المريض من قائمتك؟ ما بيقدر يدخل، وبياناته تبقى محفوظة وتقدر تسترجعه من قائمة المؤرشفين.",
+    "archivedNote": "هذا المريض محذوف من القائمة (مؤرشف). بياناته محفوظة.",
+    "eraseWarning": "بيتم حذف {name} وكل جلساته وخططه ومحادثاته نهائياً، وما فيه تراجع.",
+    "eraseTypeName": "اكتب اسم المريض للتأكيد",
+    "eraseConfirm": "احذف نهائياً",
+    "erased": "تم حذف المريض نهائياً",
+    "showArchived": "المؤرشفين",
+    "showActive": "المرضى الحاليين"
   }
 }

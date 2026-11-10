@@ -209,6 +209,7 @@ export interface V2PatientDetail {
   patient: V2User & {
     role: string
     active?: boolean
+    archivedAt?: string | null
     consentSignedAt?: string | null
     /** Number of Face ID / fingerprint passkeys on the patient's devices. */
     passkeys?: number

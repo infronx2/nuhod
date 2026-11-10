@@ -798,6 +798,7 @@
     "audit_passkey_added": "Face sign-in added",
     "audit_passkey_removed": "Face sign-in removed",
     "audit_patient_created": "Account created",
+    "audit_patient_deleted": "Patient erased",
     "audit_patient_viewed": "File opened",
     "audit_patient_updated": "Account changed",
     "audit_pin_reset": "New PIN",
@@ -807,6 +808,17 @@
     "audit_measure_deleted": "Measure deleted",
     "audit_consent_patient": "Patient agreed in app",
     "audit_export": "Data export",
-    "audit_pain_alert": "Pain alert before session"
+    "audit_pain_alert": "Pain alert before session",
+    "archivePatient": "Remove patient",
+    "restorePatient": "Restore patient",
+    "erasePatient": "Erase for good",
+    "confirm_archive": "Remove this patient from your list? They cannot sign in; their records are kept and you can restore them from Archived.",
+    "archivedNote": "This patient is removed from the list (archived). Their records are kept.",
+    "eraseWarning": "{name} and all their sessions, plans and conversations will be erased for good. This cannot be undone.",
+    "eraseTypeName": "Type the patient’s name to confirm",
+    "eraseConfirm": "Erase for good",
+    "erased": "Patient erased",
+    "showArchived": "Archived",
+    "showActive": "Current patients"
   }
 }
