@@ -6,7 +6,7 @@ import { audit } from '@/lib/audit'
 import { issueLoginToken, newPin } from '@/lib/patient-accounts'
 
 // POST /api/v2/patients/[id]/credentials: the patient's doctor manages how they sign in.
-// Body: { action: 'reset-pin' | 'qr' | 'remove-passkeys' | 'deactivate' | 'activate' }
+// Body: { action: 'reset-pin' | 'qr' | 'remove-passkeys' | 'deactivate' | 'activate' | 'archive' | 'restore' }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const payload = getUserFromRequest(req)
   if (!payload) return NextResponse.json({ ok: false, error: 'unauthenticated' }, { status: 401 })
@@ -38,6 +38,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     case 'activate': {
       await db.user.update({ where: { id }, data: { active: body.action === 'activate', tokenVersion: { increment: 1 } } })
       if (body.action === 'deactivate') await db.loginToken.deleteMany({ where: { userId: id, usedAt: null } })
+      await audit(req, { actorId: payload.sub, action: 'patient_updated', patientId: id, detail: body.action })
+      return NextResponse.json({ ok: true })
+    }
+    case 'archive':
+    case 'restore': {
+      // Archive: off the doctor's lists and signed out everywhere; every record is kept.
+      const archive = body.action === 'archive'
+      await db.user.update({ where: { id }, data: { archivedAt: archive ? new Date() : null, active: !archive, tokenVersion: { increment: 1 } } })
+      if (archive) await db.loginToken.deleteMany({ where: { userId: id, usedAt: null } })
       await audit(req, { actorId: payload.sub, action: 'patient_updated', patientId: id, detail: body.action })
       return NextResponse.json({ ok: true })
     }

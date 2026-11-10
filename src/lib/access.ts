@@ -16,8 +16,10 @@ export function isAdmin(payload: NeuromoveJwtPayload | null): boolean {
 }
 
 /** The patients this staff member may list: their own, or all of them for an admin. */
-export function staffPatientWhere(payload: NeuromoveJwtPayload): Prisma.UserWhereInput {
-  return isAdmin(payload) ? { role: 'PATIENT' } : { role: 'PATIENT', doctorId: payload.sub }
+/** The patients this staff member follows; archived ones only when `archived` is true. */
+export function staffPatientWhere(payload: NeuromoveJwtPayload, archived = false): Prisma.UserWhereInput {
+  const archivedAt = archived ? { not: null } : null
+  return isAdmin(payload) ? { role: 'PATIENT', archivedAt } : { role: 'PATIENT', doctorId: payload.sub, archivedAt }
 }
 
 /** Ids of the patients this staff member follows (for clinic-wide stats). */

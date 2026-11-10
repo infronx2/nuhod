@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   // For a patient: only their own row.
   const users = await db.user.findMany({
     where: isDoctor
-      ? staffPatientWhere(payload)
+      ? staffPatientWhere(payload, req.nextUrl.searchParams.get('archived') === '1')
       : { id: payload.sub, role: 'PATIENT' },
     select: {
       id: true,
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
       email: true,
       username: true,
       active: true,
+      archivedAt: true,
       avatarSeed: true,
       affectedSide: true,
       dateOfBirth: true,

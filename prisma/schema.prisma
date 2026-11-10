@@ -23,6 +23,8 @@ model User {
   dateOfBirth      String?
   affectedSide     String   @default("right")
   active           Boolean  @default(true)
+  /// Archived by the doctor: off every list and unable to sign in, records kept and restorable.
+  archivedAt       DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

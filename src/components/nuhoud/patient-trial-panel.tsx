@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/api'
 import { INSTRUMENTS, TIMEPOINTS, type Instrument } from '@/lib/measures'
 import type { V2PatientDetail } from '@/lib/v2-types'
 import { PatientCredentials, type IssuedCredentials } from '@/components/nuhoud/patient-credentials'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Measure { id: string; instrument: Instrument; value: number; side: string | null; timepoint: string; measuredAt: string; notes: string | null }
 interface AuditEntry { id: string; action: string; createdAt: string; actor: { name: string; role: string } | null }
@@ -39,8 +40,23 @@ function AccessCard({ detail, onChanged }: { detail: V2PatientDetail; onChanged:
   const [issued, setIssued] = React.useState<IssuedCredentials | null>(null)
   const [busy, setBusy] = React.useState<string | null>(null)
 
-  const act = async (action: 'reset-pin' | 'qr' | 'remove-passkeys' | 'deactivate' | 'activate') => {
-    if ((action === 'deactivate' || action === 'remove-passkeys') && !window.confirm(t(`confirm_${action}`))) return
+  const { user } = useAuth()
+  const isAdmin = user?.role?.toUpperCase() === 'ADMIN'
+  const archived = !!p.archivedAt
+  const [eraseOpen, setEraseOpen] = React.useState(false)
+  const [eraseName, setEraseName] = React.useState('')
+
+  const erase = async () => {
+    setBusy('erase')
+    try {
+      await apiFetch(`/api/v2/patients/${p.id}`, { method: 'DELETE', json: { confirmName: eraseName } })
+      toast.success(t('erased'))
+      window.location.href = '/'
+    } catch { toast.error(t('actionFailed')) } finally { setBusy(null) }
+  }
+
+  const act = async (action: 'reset-pin' | 'qr' | 'remove-passkeys' | 'deactivate' | 'activate' | 'archive' | 'restore') => {
+    if ((action === 'deactivate' || action === 'remove-passkeys' || action === 'archive') && !window.confirm(t(`confirm_${action}`))) return
     setBusy(action)
     try {
       const res = await apiFetch<{ pin?: string; qrToken?: string; qrExpiresAt?: string }>(`/api/v2/patients/${p.id}/credentials`, { method: 'POST', json: { action } })
@@ -79,7 +95,35 @@ function AccessCard({ detail, onChanged }: { detail: V2PatientDetail; onChanged:
         <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" disabled={!!busy} onClick={() => void act(p.active === false ? 'activate' : 'deactivate')}>
           <UserX className="h-3.5 w-3.5" /> {p.active === false ? t('activate') : t('deactivate')}
         </Button>
+        {!archived ? (
+          <Button size="sm" variant="ghost" className="gap-1.5 text-rose-600 hover:text-rose-700" disabled={!!busy} onClick={() => void act('archive')}>
+            <Trash2 className="h-3.5 w-3.5" /> {t('archivePatient')}
+          </Button>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void act('restore')}>
+              <History className="h-3.5 w-3.5" /> {t('restorePatient')}
+            </Button>
+            {isAdmin && (
+              <Button size="sm" variant="destructive" className="gap-1.5" disabled={!!busy} onClick={() => { setEraseName(''); setEraseOpen(true) }}>
+                <Trash2 className="h-3.5 w-3.5" /> {t('erasePatient')}
+              </Button>
+            )}
+          </>
+        )}
       </div>
+      {archived && <p className="text-xs text-muted-foreground">{t('archivedNote')}</p>}
+      <Dialog open={eraseOpen} onOpenChange={setEraseOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{t('erasePatient')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{t('eraseWarning', { name: p.name })}</p>
+          <Label htmlFor="erase-name">{t('eraseTypeName')}</Label>
+          <Input id="erase-name" value={eraseName} onChange={(e) => setEraseName(e.target.value)} autoComplete="off" />
+          <Button variant="destructive" disabled={eraseName.trim() !== p.name.trim() || busy === 'erase'} onClick={() => void erase()} className="gap-1.5">
+            {busy === 'erase' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} {t('eraseConfirm')}
+          </Button>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!issued} onOpenChange={(v) => !v && setIssued(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{t('accessTitle')}</DialogTitle></DialogHeader>

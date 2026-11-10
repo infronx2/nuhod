@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { toast } from 'sonner'
 import { useTranslations } from 'next-intl'
-import { Users, Activity, TriangleAlert, Dumbbell, Download, UserPlus } from 'lucide-react'
+import { Users, Activity, TriangleAlert, Dumbbell, Download, UserPlus, Archive } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddPatientDialog } from '@/components/nuhoud/add-patient-dialog'
 import { getToken } from '@/lib/api'
@@ -42,6 +42,8 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
   const [presetToPrescribe, setPresetToPrescribe] = React.useState<any | null>(null)
   const [presetDialogOpen, setPresetDialogOpen] = React.useState(false)
   const [addOpen, setAddOpen] = React.useState(false)
+  /** Show the archived patients (to restore or erase them) instead of the active list. */
+  const [showArchived, setShowArchived] = React.useState(false)
   const tm = useTranslations('mvp')
 
   // The trial data as CSV (pseudonymised on the server), downloaded with the doctor's token.
@@ -59,7 +61,7 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
   const fetchRoster = React.useCallback(async () => {
     setLoading(true)
     try {
-      const data = await apiFetch<V2PatientsResponse>('/api/v2/patients')
+      const data = await apiFetch<V2PatientsResponse>(showArchived ? '/api/v2/patients?archived=1' : '/api/v2/patients')
       setPatients(data.patients ?? [])
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load roster'
@@ -67,7 +69,7 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showArchived])
 
   const fetchGlobal = React.useCallback(async () => {
     try {
@@ -138,6 +140,9 @@ export function DoctorDashboard({ doctorId: _doctorId }: DoctorDashboardProps) {
         <Button onClick={() => setAddOpen(true)} className="h-10 gap-2"><UserPlus className="h-4 w-4" /> {tm('addTitle')}</Button>
         <Button variant="outline" onClick={() => void exportCsv('sessions')} className="h-10 gap-2"><Download className="h-4 w-4" /> {tm('exportSessions')}</Button>
         <Button variant="outline" onClick={() => void exportCsv('measures')} className="h-10 gap-2"><Download className="h-4 w-4" /> {tm('exportMeasures')}</Button>
+        <Button variant={showArchived ? 'secondary' : 'ghost'} onClick={() => setShowArchived((v) => !v)} className="h-10 gap-2">
+          <Archive className="h-4 w-4" /> {showArchived ? tm('showActive') : tm('showArchived')}
+        </Button>
       </div>
       <AddPatientDialog open={addOpen} onOpenChange={setAddOpen} onAdded={refresh} />
 

@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 export type AuditAction =
   | 'login' | 'login_failed' | 'login_locked' | 'login_qr' | 'login_passkey'
   | 'passkey_added' | 'passkey_removed'
-  | 'patient_created' | 'patient_viewed' | 'patient_updated' | 'pin_reset' | 'qr_issued'
+  | 'patient_created' | 'patient_viewed' | 'patient_updated' | 'patient_deleted' | 'pin_reset' | 'qr_issued'
   | 'plan_created' | 'measure_added' | 'measure_deleted' | 'consent_patient' | 'export' | 'pain_alert'
 
 export function clientIp(req: Request): string | null {
